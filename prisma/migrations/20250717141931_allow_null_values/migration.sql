@@ -1,0 +1,4 @@
+-- AlterTable
+ALTER TABLE "users" ALTER COLUMN "role" DROP NOT NULL,
+ALTER COLUMN "is_verified" DROP NOT NULL,
+ALTER COLUMN "user_type" DROP NOT NULL;

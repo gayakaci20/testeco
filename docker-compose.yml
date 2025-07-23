@@ -1,0 +1,162 @@
+services:
+  # Base de données PostgreSQL
+  postgres:
+    image: postgres:15-alpine
+    container_name: eco-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: eco_database
+      POSTGRES_USER: eco_user
+      POSTGRES_PASSWORD: eco_password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
+    ports:
+      - "5432:5432"
+    networks:
+      - eco-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U eco_user -d eco_database"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis pour le cache et les sessions
+  redis:
+    image: redis:7-alpine
+    container_name: eco-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - eco-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Service de migration Prisma
+  prisma-migrate:
+    build:
+      context: .
+      dockerfile: Dockerfile.migrate
+    container_name: eco-prisma-migrate
+    environment:
+      - DATABASE_URL=postgresql://eco_user:eco_password@postgres:5432/eco_database
+      - DIRECT_URL=postgresql://eco_user:eco_password@postgres:5432/eco_database
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - eco-network
+    restart: "no"
+
+  # Application principale Eco-Front
+  eco-front:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: eco-front-app
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=postgresql://eco_user:eco_password@postgres:5432/eco_database
+      - DIRECT_URL=postgresql://eco_user:eco_password@postgres:5432/eco_database
+      - NEXTAUTH_SECRET=your-super-secret-key-change-in-production
+      - NEXTAUTH_URL=http://localhost:3000
+      - REDIS_URL=redis://redis:6379
+      - STRIPE_SECRET_KEY=your-stripe-secret-key
+      - STRIPE_PUBLISHABLE_KEY=your-stripe-publishable-key
+      - JWT_SECRET=your_jwt_secret_key_here_change_in_production
+      - NEXT_PUBLIC_BASE_URL=http://localhost:3000
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      prisma-migrate:
+        condition: service_completed_successfully
+    networks:
+      - eco-network
+    volumes:
+      - uploads_data:/app/public/uploads
+
+  # Dashboard Admin
+  admin-dashboard:
+    build:
+      context: ./admin-dashboard
+      dockerfile: Dockerfile
+    container_name: eco-admin-dashboard
+    restart: unless-stopped
+    ports:
+      - "3001:3001"
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=postgresql://eco_user:eco_password@postgres:5432/eco_database
+      - DIRECT_URL=postgresql://eco_user:eco_password@postgres:5432/eco_database
+      - NEXTAUTH_SECRET=your-super-secret-key-change-in-production
+      - NEXTAUTH_URL=http://localhost:3001
+    depends_on:
+      postgres:
+        condition: service_healthy
+      prisma-migrate:
+        condition: service_completed_successfully
+    networks:
+      - eco-network
+    volumes:
+      - documents_data:/app/public/documents
+
+  # Nginx comme reverse proxy
+  nginx:
+    image: nginx:alpine
+    container_name: eco-nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./ssl:/etc/nginx/ssl:ro
+      - /var/www/certbot:/var/www/certbot:ro
+    depends_on:
+      - eco-front
+      - admin-dashboard
+    networks:
+      - eco-network
+    healthcheck:
+      test: ["CMD", "nginx", "-t"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Certbot pour Let's Encrypt
+  certbot:
+    image: certbot/certbot:latest
+    container_name: eco-certbot
+    volumes:
+      - /var/www/certbot:/var/www/certbot:rw
+      - ./ssl:/etc/letsencrypt:rw
+    command: certonly --webroot --webroot-path=/var/www/certbot --email admin@votre-domaine.com --agree-tos --no-eff-email -d votre-domaine.com -d www.votre-domaine.com
+    depends_on:
+      - nginx
+    networks:
+      - eco-network
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  uploads_data:
+    driver: local
+  documents_data:
+    driver: local
+
+networks:
+  eco-network:
+    driver: bridge 

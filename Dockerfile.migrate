@@ -1,0 +1,32 @@
+FROM node:18-alpine
+
+RUN apk add --no-cache libc6-compat postgresql-client
+
+WORKDIR /app
+
+# Copy package files
+COPY package.json package-lock.json* ./
+COPY prisma ./prisma/
+
+# Install dependencies
+RUN npm ci --only=production --frozen-lockfile
+
+# Generate Prisma client
+RUN npx prisma generate
+
+# Create migration script with proper error handling and database waiting
+RUN echo '#!/bin/sh' > migrate.sh && \
+    echo 'set -e' >> migrate.sh && \
+    echo 'echo "Starting database migration..."' >> migrate.sh && \
+    echo 'echo "Waiting for database to be ready..."' >> migrate.sh && \
+    echo 'until pg_isready -h postgres -p 5432 -U eco_user; do' >> migrate.sh && \
+    echo '  echo "Database not ready, waiting..."' >> migrate.sh && \
+    echo '  sleep 2' >> migrate.sh && \
+    echo 'done' >> migrate.sh && \
+    echo 'echo "Database is ready!"' >> migrate.sh && \
+    echo 'echo "Running Prisma migrations..."' >> migrate.sh && \
+    echo 'npx prisma migrate deploy' >> migrate.sh && \
+    echo 'echo "Migration completed successfully!"' >> migrate.sh && \
+    chmod +x migrate.sh
+
+CMD ["./migrate.sh"] 

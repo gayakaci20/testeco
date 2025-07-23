@@ -1,0 +1,731 @@
+generator client {
+  provider      = "prisma-client-js"
+  output        = "../src/generated/prisma"
+  binaryTargets = ["native", "rhel-openssl-1.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id                                                       String               @id @default(cuid())
+  email                                                    String               @unique
+  password                                                 String?
+  name                                                     String?
+  firstName                                                String?              @map("first_name")
+  lastName                                                 String?              @map("last_name")
+  image                                                    String?
+  phoneNumber                                              String?              @unique @map("phone_number")
+  address                                                  String?
+  role                                                     Role?                @default(CUSTOMER)
+  isVerified                                               Boolean?             @default(false) @map("is_verified")
+  emailVerified                                            DateTime?            @map("email_verified")
+  createdAt                                                DateTime             @default(now()) @map("created_at")
+  updatedAt                                                DateTime             @updatedAt @map("updated_at")
+  userType                                                 UserType?            @default(INDIVIDUAL) @map("user_type")
+  companyFirstName                                         String?              @map("company_first_name")
+  companyLastName                                          String?              @map("company_last_name")
+  companyName                                              String?              @map("company_name")
+  verificationToken                                        String?              @map("verification_token")
+  vehicle_type                                             String?
+  accounts                                                 Account[]
+  bankingInfo                                              BankingInfo?
+  customerBookings                                         Booking[]            @relation("Customer")
+  providedBookings                                         Booking[]            @relation("ServiceProvider")
+  boxRentals                                               BoxRental[]
+  carrier_reviews_carrier_reviews_carrier_idTousers        carrier_reviews[]    @relation("carrier_reviews_carrier_idTousers")
+  carrier_reviews_carrier_reviews_customer_idTousers       carrier_reviews[]    @relation("carrier_reviews_customer_idTousers")
+  carrierContracts                                         Contract[]           @relation("CarrierContracts")
+  merchantContracts                                        Contract[]           @relation("MerchantContracts")
+  conversations_conversations_user1_idTousers              conversations[]      @relation("conversations_user1_idTousers")
+  conversations_conversations_user2_idTousers              conversations[]      @relation("conversations_user2_idTousers")
+  documents                                                Document[]
+  receivedMessages                                         Message[]            @relation("ReceiverMessages")
+  sentMessages                                             Message[]            @relation("SenderMessages")
+  notifications                                            Notification[]
+  customerOrders                                           Order[]              @relation("CustomerOrders")
+  merchantOrders                                           Order[]              @relation("MerchantOrders")
+  packages                                                 Package[]
+  payments                                                 Payment[]
+  products                                                 Product[]            @relation("MerchantProducts")
+  ride_requests_ride_requests_carrier_idTousers            ride_requests[]      @relation("ride_requests_carrier_idTousers")
+  ride_requests_ride_requests_passenger_idTousers          ride_requests[]      @relation("ride_requests_passenger_idTousers")
+  rides                                                    Ride[]
+  services                                                 Service[]
+  sessions                                                 Session[]
+  storageBoxes                                             StorageBox[]         @relation("StorageBoxOwner")
+  subscriptions                                            Subscription[]
+  tracking_events_tracking_events_carrier_idTousers        tracking_events[]    @relation("tracking_events_carrier_idTousers")
+  tracking_events_tracking_events_next_carrier_idTousers   tracking_events[]    @relation("tracking_events_next_carrier_idTousers")
+  transport_requests_transport_requests_carrier_idTousers  transport_requests[] @relation("transport_requests_carrier_idTousers")
+  transport_requests_transport_requests_customer_idTousers transport_requests[] @relation("transport_requests_customer_idTousers")
+
+  @@map("users")
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String  @map("user_id")
+  type              String
+  provider          String
+  providerAccountId String  @map("provider_account_id")
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+  user              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@map("accounts")
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique @map("session_token")
+  userId       String   @map("user_id")
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("sessions")
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+  @@map("verificationtokens")
+}
+
+model Package {
+  id                String            @id @default(cuid())
+  userId            String            @map("user_id")
+  description       String
+  weight            Float?
+  dimensions        String?
+  imageUrl          String?           @map("image_url")
+  status            PackageStatus     @default(PENDING)
+  createdAt         DateTime          @default(now()) @map("created_at")
+  updatedAt         DateTime          @updatedAt @map("updated_at")
+  price             Float?
+  fragile           Boolean           @default(false)
+  recipientAddress  String            @map("recipient_address")
+  recipientName     String            @map("recipient_name")
+  recipientPhone    String            @map("recipient_phone")
+  senderAddress     String            @map("sender_address")
+  senderName        String            @map("sender_name")
+  senderPhone       String            @map("sender_phone")
+  size              String?
+  trackingNumber    String            @unique @map("tracking_number")
+  urgent            Boolean           @default(false)
+  current_location  String?
+  final_destination String?
+  is_multi_segment  Boolean           @default(false)
+  parent_package_id String?
+  segment_number    Int               @default(1)
+  total_segments    Int               @default(1)
+  matches           Match[]
+  order             Order?
+  packages          Package?          @relation("packagesTopackages", fields: [parent_package_id], references: [id])
+  other_packages    Package[]         @relation("packagesTopackages")
+  user              User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tracking_events   tracking_events[]
+
+  @@map("packages")
+}
+
+model Ride {
+  id                   String          @id @default(cuid())
+  userId               String          @map("user_id")
+  departureTime        DateTime        @map("departure_time")
+  pricePerKg           Float           @map("price_per_kg")
+  status               RideStatus      @default(PENDING)
+  createdAt            DateTime        @default(now()) @map("created_at")
+  updatedAt            DateTime        @updatedAt @map("updated_at")
+  arrivalTime          DateTime?       @map("arrival_time")
+  availableSpace       String          @map("available_space")
+  description          String?
+  destination          String
+  maxWeight            Float?          @map("max_weight")
+  origin               String
+  vehicleType          String?         @map("vehicle_type")
+  allows_relay_dropoff Boolean         @default(false)
+  allows_relay_pickup  Boolean         @default(false)
+  matches              Match[]
+  ride_requests        ride_requests[]
+  user                 User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("rides")
+}
+
+model Match {
+  id                  String           @id @default(cuid())
+  packageId           String           @map("package_id")
+  rideId              String           @map("ride_id")
+  status              MatchStatus      @default(PENDING)
+  price               Float?
+  createdAt           DateTime         @default(now()) @map("created_at")
+  updatedAt           DateTime         @updatedAt @map("updated_at")
+  acceptedAt          DateTime?        @map("accepted_at")
+  completedAt         DateTime?        @map("completed_at")
+  notes               String?
+  dropoff_location    String?
+  is_partial_delivery Boolean          @default(false)
+  is_relay_segment    Boolean          @default(false)
+  segment_order       Int              @default(1)
+  carrier_reviews     carrier_reviews?
+  package             Package          @relation(fields: [packageId], references: [id], onDelete: Cascade)
+  ride                Ride             @relation(fields: [rideId], references: [id], onDelete: Cascade)
+  payment             Payment?
+
+  @@map("matches")
+}
+
+model Message {
+  id         String   @id @default(cuid())
+  senderId   String   @map("sender_id")
+  receiverId String   @map("receiver_id")
+  content    String
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+  isRead     Boolean  @default(false) @map("is_read")
+  receiver   User     @relation("ReceiverMessages", fields: [receiverId], references: [id], onDelete: Cascade)
+  sender     User     @relation("SenderMessages", fields: [senderId], references: [id], onDelete: Cascade)
+
+  @@map("messages")
+}
+
+model Payment {
+  id                  String         @id @default(cuid())
+  userId              String?        @map("user_id")
+  matchId             String?        @unique @map("match_id")
+  amount              Float
+  currency            String         @default("EUR")
+  status              PaymentStatus  @default(PENDING)
+  paymentMethod       String?        @map("payment_method")
+  transactionId       String?        @unique @map("transaction_id")
+  paymentIntentId     String?        @unique @map("payment_intent_id")
+  createdAt           DateTime       @default(now()) @map("created_at")
+  updatedAt           DateTime       @updatedAt @map("updated_at")
+  refundAmount        Float?         @map("refund_amount")
+  refundReason        String?        @map("refund_reason")
+  completedAt         DateTime?      @map("completed_at")
+  metadata            Json?
+  orderId             String?        @map("order_id")
+  stripeTransactionId String?        @unique @map("stripe_transaction_id")
+  ride_request_id     String?
+  match               Match?         @relation(fields: [matchId], references: [id])
+  order               Order?         @relation(fields: [orderId], references: [id])
+  ride_requests       ride_requests? @relation(fields: [ride_request_id], references: [id])
+  user                User?          @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("payments")
+}
+
+model Notification {
+  id              String           @id @default(cuid())
+  userId          String           @map("user_id")
+  type            NotificationType
+  message         String
+  relatedEntityId String?          @map("related_entity_id")
+  createdAt       DateTime         @default(now()) @map("created_at")
+  updatedAt       DateTime         @updatedAt @map("updated_at")
+  data            Json?
+  isRead          Boolean          @default(false) @map("is_read")
+  title           String
+  user            User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("notifications")
+}
+
+model Service {
+  id           String          @id @default(cuid())
+  providerId   String          @map("provider_id")
+  name         String
+  description  String?
+  category     ServiceCategory @default(OTHER)
+  price        Float
+  duration     Int?
+  isActive     Boolean         @default(true) @map("is_active")
+  location     String?
+  requirements String?
+  createdAt    DateTime        @default(now()) @map("created_at")
+  updatedAt    DateTime        @updatedAt @map("updated_at")
+  rating       Float?          @default(0)
+  totalRatings Int             @default(0) @map("total_ratings")
+  bookings     Booking[]
+  provider     User            @relation(fields: [providerId], references: [id], onDelete: Cascade)
+
+  @@map("services")
+}
+
+model Booking {
+  id          String        @id @default(cuid())
+  serviceId   String        @map("service_id")
+  customerId  String        @map("customer_id")
+  providerId  String        @map("provider_id")
+  scheduledAt DateTime      @map("scheduled_at")
+  duration    Int?
+  totalAmount Float         @map("total_amount")
+  status      BookingStatus @default(PENDING)
+  notes       String?
+  address     String?
+  rating      Int?
+  review      String?
+  createdAt   DateTime      @default(now()) @map("created_at")
+  updatedAt   DateTime      @updatedAt @map("updated_at")
+  customer    User          @relation("Customer", fields: [customerId], references: [id], onDelete: Cascade)
+  provider    User          @relation("ServiceProvider", fields: [providerId], references: [id], onDelete: Cascade)
+  service     Service       @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+
+  @@map("bookings")
+}
+
+model Contract {
+  id         String         @id @default(cuid())
+  merchantId String?        @map("merchant_id")
+  title      String
+  content    String
+  terms      String?
+  status     ContractStatus @default(DRAFT)
+  signedAt   DateTime?      @map("signed_at")
+  expiresAt  DateTime?      @map("expires_at")
+  value      Float?
+  currency   String         @default("EUR")
+  createdAt  DateTime       @default(now()) @map("created_at")
+  updatedAt  DateTime       @updatedAt @map("updated_at")
+  carrierId  String?        @map("carrier_id")
+  endDate    DateTime?      @map("end_date")
+  startDate  DateTime?      @map("start_date")
+  carrier    User?          @relation("CarrierContracts", fields: [carrierId], references: [id], onDelete: Cascade)
+  merchant   User?          @relation("MerchantContracts", fields: [merchantId], references: [id], onDelete: Cascade)
+
+  @@map("contracts")
+}
+
+model Document {
+  id                String       @id @default(cuid())
+  userId            String       @map("user_id")
+  type              DocumentType @default(OTHER)
+  title             String
+  description       String?
+  fileName          String       @map("file_name")
+  filePath          String       @map("file_path")
+  fileSize          Int?         @map("file_size")
+  mimeType          String?      @map("mime_type")
+  relatedEntityId   String?      @map("related_entity_id")
+  relatedEntityType String?      @map("related_entity_type")
+  isPublic          Boolean      @default(false) @map("is_public")
+  createdAt         DateTime     @default(now()) @map("created_at")
+  updatedAt         DateTime     @updatedAt @map("updated_at")
+  user              User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("documents")
+}
+
+model StorageBox {
+  id          String      @id @default(cuid())
+  code        String      @unique
+  location    String
+  size        String
+  isOccupied  Boolean     @default(false) @map("is_occupied")
+  isActive    Boolean     @default(true) @map("is_active")
+  pricePerDay Float       @map("price_per_day")
+  createdAt   DateTime    @default(now()) @map("created_at")
+  updatedAt   DateTime    @updatedAt @map("updated_at")
+  ownerId     String?     @map("owner_id")
+  rentals     BoxRental[]
+  owner       User?       @relation("StorageBoxOwner", fields: [ownerId], references: [id])
+
+  @@map("storage_boxes")
+}
+
+model BoxRental {
+  id         String     @id @default(cuid())
+  boxId      String     @map("box_id")
+  userId     String     @map("user_id")
+  startDate  DateTime   @map("start_date")
+  endDate    DateTime?  @map("end_date")
+  totalCost  Float?     @map("total_cost")
+  accessCode String?    @map("access_code")
+  isActive   Boolean    @default(true) @map("is_active")
+  createdAt  DateTime   @default(now()) @map("created_at")
+  updatedAt  DateTime   @updatedAt @map("updated_at")
+  box        StorageBox @relation(fields: [boxId], references: [id], onDelete: Cascade)
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("box_rentals")
+}
+
+model Order {
+  id                   String      @id @default(cuid())
+  customerId           String?     @map("customer_id")
+  merchantId           String      @map("merchant_id")
+  packageId            String?     @unique @map("package_id")
+  customerName         String      @map("customer_name")
+  customerEmail        String?     @map("customer_email")
+  customerPhone        String?     @map("customer_phone")
+  orderType            String      @default("POS_CHECKOUT") @map("order_type")
+  subtotal             Float
+  deliveryFee          Float       @default(0) @map("delivery_fee")
+  tax                  Float       @default(0)
+  total                Float
+  status               OrderStatus @default(PENDING)
+  hasDelivery          Boolean     @default(false) @map("has_delivery")
+  deliveryAddress      String?     @map("delivery_address")
+  deliveryTimeSlot     String?     @map("delivery_time_slot")
+  deliveryInstructions String?     @map("delivery_instructions")
+  createdAt            DateTime    @default(now()) @map("created_at")
+  updatedAt            DateTime    @updatedAt @map("updated_at")
+  confirmedAt          DateTime?   @map("confirmed_at")
+  shippedAt            DateTime?   @map("shipped_at")
+  deliveredAt          DateTime?   @map("delivered_at")
+  items                OrderItem[]
+  customer             User?       @relation("CustomerOrders", fields: [customerId], references: [id])
+  merchant             User        @relation("MerchantOrders", fields: [merchantId], references: [id], onDelete: Cascade)
+  package              Package?    @relation(fields: [packageId], references: [id])
+  payments             Payment[]
+
+  @@map("orders")
+}
+
+model OrderItem {
+  id          String   @id @default(cuid())
+  orderId     String   @map("order_id")
+  productId   String?  @map("product_id")
+  productName String   @map("product_name")
+  quantity    Int      @default(1)
+  unitPrice   Float    @map("unit_price")
+  totalPrice  Float    @map("total_price")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+  order       Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@map("order_items")
+}
+
+model Product {
+  id          String   @id @default(cuid())
+  merchantId  String   @map("merchant_id")
+  name        String
+  description String?
+  price       Float
+  category    String
+  stock       Int      @default(0)
+  imageUrl    String?  @map("image_url")
+  weight      Float?
+  dimensions  String?
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+  merchant    User     @relation("MerchantProducts", fields: [merchantId], references: [id], onDelete: Cascade)
+
+  @@map("products")
+}
+
+model BankingInfo {
+  id            String   @id @default(cuid())
+  userId        String   @unique @map("user_id")
+  accountHolder String   @map("account_holder")
+  iban          String
+  bic           String
+  bankName      String   @map("bank_name")
+  address       String?
+  isVerified    Boolean  @default(false) @map("is_verified")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("banking_info")
+}
+
+model Subscription {
+  id                   String             @id @default(cuid())
+  userId               String             @map("user_id")
+  plan                 SubscriptionPlan   @default(PROFESSIONAL)
+  status               SubscriptionStatus @default(PENDING)
+  currentPeriodStart   DateTime?          @map("current_period_start")
+  currentPeriodEnd     DateTime?          @map("current_period_end")
+  canceledAt           DateTime?          @map("canceled_at")
+  stripeSubscriptionId String?            @unique @map("stripe_subscription_id")
+  stripeCustomerId     String?            @map("stripe_customer_id")
+  stripePriceId        String?            @map("stripe_price_id")
+  amount               Float              @default(10.00)
+  currency             String             @default("eur")
+  isActive             Boolean            @default(false) @map("is_active")
+  autoRenew            Boolean            @default(true) @map("auto_renew")
+  trialEndsAt          DateTime?          @map("trial_ends_at")
+  createdAt            DateTime           @default(now()) @map("created_at")
+  updatedAt            DateTime           @updatedAt @map("updated_at")
+  user                 User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("subscriptions")
+}
+
+model carrier_reviews {
+  id                                       String   @id
+  match_id                                 String   @unique
+  customer_id                              String
+  carrier_id                               String
+  rating                                   Int
+  review                                   String?
+  created_at                               DateTime @default(now())
+  updated_at                               DateTime
+  users_carrier_reviews_carrier_idTousers  User     @relation("carrier_reviews_carrier_idTousers", fields: [carrier_id], references: [id], onDelete: Cascade)
+  users_carrier_reviews_customer_idTousers User     @relation("carrier_reviews_customer_idTousers", fields: [customer_id], references: [id], onDelete: Cascade)
+  matches                                  Match    @relation(fields: [match_id], references: [id], onDelete: Cascade)
+}
+
+model conversations {
+  id                                  String   @id
+  user1_id                            String
+  user2_id                            String
+  created_at                          DateTime @default(now())
+  updated_at                          DateTime
+  users_conversations_user1_idTousers User     @relation("conversations_user1_idTousers", fields: [user1_id], references: [id], onDelete: Cascade)
+  users_conversations_user2_idTousers User     @relation("conversations_user2_idTousers", fields: [user2_id], references: [id], onDelete: Cascade)
+
+  @@unique([user1_id, user2_id])
+}
+
+model ride_requests {
+  id                                      String            @id
+  ride_id                                 String
+  passenger_id                            String
+  carrier_id                              String
+  pickup_location                         String
+  dropoff_location                        String
+  requested_seats                         Int               @default(1)
+  message                                 String?
+  status                                  RideRequestStatus @default(PENDING)
+  price                                   Decimal?          @default(0) @db.Decimal(10, 2)
+  accepted_at                             DateTime?
+  rejected_at                             DateTime?
+  created_at                              DateTime          @default(now())
+  updated_at                              DateTime
+  payments                                Payment[]
+  users_ride_requests_carrier_idTousers   User              @relation("ride_requests_carrier_idTousers", fields: [carrier_id], references: [id], onDelete: Cascade)
+  users_ride_requests_passenger_idTousers User              @relation("ride_requests_passenger_idTousers", fields: [passenger_id], references: [id], onDelete: Cascade)
+  rides                                   Ride              @relation(fields: [ride_id], references: [id], onDelete: Cascade)
+}
+
+model tracking_events {
+  id                                           String   @id
+  package_id                                   String
+  carrier_id                                   String?
+  status                                       String
+  location                                     String
+  notes                                        String?
+  lat                                          Float?
+  lng                                          Float?
+  timestamp                                    DateTime @default(now())
+  created_at                                   DateTime @default(now())
+  updated_at                                   DateTime
+  event_type                                   String?
+  next_carrier_id                              String?
+  transfer_code                                String?
+  users_tracking_events_carrier_idTousers      User?    @relation("tracking_events_carrier_idTousers", fields: [carrier_id], references: [id])
+  users_tracking_events_next_carrier_idTousers User?    @relation("tracking_events_next_carrier_idTousers", fields: [next_carrier_id], references: [id])
+  packages                                     Package  @relation(fields: [package_id], references: [id], onDelete: Cascade)
+}
+
+model transport_requests {
+  id                                          String                 @id
+  customer_id                                 String
+  carrier_id                                  String?
+  title                                       String
+  description                                 String?
+  weight                                      Float?
+  dimensions                                  String?
+  pickup_address                              String
+  delivery_address                            String
+  pickup_date                                 DateTime?
+  pickup_time                                 String?
+  delivery_date                               DateTime?
+  delivery_time                               String?
+  max_price                                   Float?
+  negotiated_price                            Float?
+  is_fragile                                  Boolean                @default(false)
+  is_urgent                                   Boolean                @default(false)
+  sender_name                                 String?
+  sender_phone                                String?
+  recipient_name                              String?
+  recipient_phone                             String?
+  notes                                       String?
+  carrier_notes                               String?
+  status                                      TransportRequestStatus @default(PENDING)
+  tracking_number                             String                 @unique
+  accepted_at                                 DateTime?
+  completed_at                                DateTime?
+  created_at                                  DateTime               @default(now())
+  updated_at                                  DateTime
+  users_transport_requests_carrier_idTousers  User?                  @relation("transport_requests_carrier_idTousers", fields: [carrier_id], references: [id])
+  users_transport_requests_customer_idTousers User                   @relation("transport_requests_customer_idTousers", fields: [customer_id], references: [id], onDelete: Cascade)
+}
+
+enum Role {
+  CUSTOMER
+  CARRIER
+  MERCHANT
+  PROVIDER
+  SERVICE_PROVIDER
+  ADMIN
+}
+
+enum UserType {
+  INDIVIDUAL
+  PROFESSIONAL
+}
+
+enum PackageStatus {
+  PENDING
+  CONFIRMED
+  IN_TRANSIT
+  DELIVERED
+  CANCELLED
+  AWAITING_RELAY
+  RELAY_IN_PROGRESS
+  ACCEPTED_BY_SENDER
+  ACCEPTED_BY_CARRIER
+}
+
+enum RideStatus {
+  PENDING
+  CONFIRMED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+enum MatchStatus {
+  PENDING
+  ACCEPTED_BY_CARRIER
+  ACCEPTED_BY_SENDER
+  CONFIRMED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+  REJECTED
+  AWAITING_TRANSFER
+  READY_FOR_PICKUP
+  PROPOSED
+}
+
+enum PaymentStatus {
+  PENDING
+  COMPLETED
+  FAILED
+  REFUNDED
+  PROCESSING
+}
+
+enum NotificationType {
+  PACKAGE_UPDATE
+  RIDE_UPDATE
+  MATCH_UPDATE
+  PAYMENT_UPDATE
+  GENERAL
+  PROMOTION
+  SYSTEM
+  TRANSPORT_REQUEST
+  TRANSPORT_REQUEST_ACCEPTED
+  TRANSPORT_IN_PROGRESS
+  TRANSPORT_COMPLETED
+  PAYMENT_REQUIRED
+  PAYMENT_SUCCESS
+  MATCH_ACCEPTED
+  BOOKING_CONFIRMED
+  RENTAL_CONFIRMED
+  DELIVERY_ACCEPTED
+  DELIVERY_STARTED
+  DELIVERY_COMPLETED
+  RIDE_REQUEST
+  RIDE_ACCEPTED
+  RIDE_REJECTED
+}
+
+enum ServiceCategory {
+  CLEANING
+  MAINTENANCE
+  DELIVERY
+  PERSONAL_CARE
+  TUTORING
+  CONSULTING
+  OTHER
+}
+
+enum BookingStatus {
+  PENDING
+  CONFIRMED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+  REFUNDED
+}
+
+enum ContractStatus {
+  DRAFT
+  PENDING
+  SIGNED
+  EXPIRED
+  TERMINATED
+  PENDING_SIGNATURE
+}
+
+enum DocumentType {
+  INVOICE
+  CONTRACT
+  RECEIPT
+  DELIVERY_NOTE
+  CERTIFICATE
+  OTHER
+}
+
+enum OrderStatus {
+  PENDING
+  CONFIRMED
+  PROCESSING
+  SHIPPED
+  DELIVERED
+  CANCELLED
+  REFUNDED
+}
+
+enum SubscriptionPlan {
+  PROFESSIONAL
+  PREMIUM
+}
+
+enum SubscriptionStatus {
+  PENDING
+  ACTIVE
+  PAST_DUE
+  CANCELED
+  UNPAID
+  INCOMPLETE
+  INCOMPLETE_EXPIRED
+  TRIALING
+  PAUSED
+}
+
+enum RideRequestStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+  CANCELLED
+  PAID
+}
+
+enum TransportRequestStatus {
+  PENDING
+  ACCEPTED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
