@@ -14,7 +14,7 @@ const GoogleMapComponent = dynamic(
       <div className="flex justify-center items-center w-full h-full bg-gray-100 dark:bg-gray-800">
         <div className="text-center">
           <div className="mx-auto mb-4 w-16 h-16 rounded-full border-4 border-sky-400 animate-spin border-t-transparent"></div>
-          <p className="text-gray-600 dark:text-gray-300">{t ? t('loadingMap') : 'Chargement de la carte...'}</p>
+          <p className="text-gray-600 dark:text-gray-300">Chargement de la carte...</p>
         </div>
       </div>
     )

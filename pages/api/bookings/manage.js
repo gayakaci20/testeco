@@ -93,7 +93,7 @@ if (req.method !== 'POST') {
 
     // Create notification with automatic email for customer
     try {
-      const { createNotificationWithEmail } = await import('../../lib/notification-helper.js');
+      const { createNotificationWithEmail } = await import('../../../lib/notification-helper.js');
       
       if (action === 'ACCEPT') {
         // Create confirmed notification
