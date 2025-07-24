@@ -119,13 +119,47 @@ export default function CarrierUpdate({ isDarkMode, toggleDarkMode }) {
       });
 
       if (response.ok) {
-        // Rafraîchir les données
+        console.log(`✅ Statut mis à jour: ${delivery.title} -> ${status}`);
+        
+        // Déclencher l'événement de mise à jour en temps réel pour delivery-tracking.jsx
+        const updateEvent = {
+          packageId: packageId,
+          status: status,
+          updatedBy: 'carrier',
+          timestamp: new Date().toISOString(),
+          deliveryTitle: delivery.title
+        };
+        
+        // Notifier via localStorage pour les autres onglets/pages
+        localStorage.setItem('deliveryUpdate', JSON.stringify(updateEvent));
+        
+        // Nettoyer l'événement après un court délai
+        setTimeout(() => {
+          localStorage.removeItem('deliveryUpdate');
+        }, 1000);
+        
+        // Rafraîchir les données locales
         await fetchDeliveryData();
+        
+        // Afficher un message de succès temporaire
+        const button = document.querySelector(`[data-package-id="${packageId}"]`);
+        if (button) {
+          const originalText = button.innerHTML;
+          button.innerHTML = '<svg class="mr-1 w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"></path></svg>Mis à jour !';
+          button.disabled = true;
+          
+          setTimeout(() => {
+            button.innerHTML = originalText;
+            button.disabled = false;
+          }, 2000);
+        }
       } else {
         console.error('Failed to update delivery status');
+        alert('Erreur lors de la mise à jour du statut');
       }
     } catch (error) {
       console.error('Error updating delivery status:', error);
+      alert('Erreur lors de la mise à jour du statut');
     }
   };
 
@@ -321,6 +355,7 @@ export default function CarrierUpdate({ isDarkMode, toggleDarkMode }) {
                           {/* Actions selon l'état */}
                           {(delivery.status === 'CONFIRMED' || delivery.status === 'ACCEPTED_BY_SENDER') && (
                             <button
+                              data-package-id={getPackageId(delivery)}
                               onClick={() => updateDeliveryStatus(delivery, 'ACCEPTED_BY_CARRIER')}
                               className="flex gap-1 items-center px-3 py-1 text-xs font-medium text-green-600 bg-green-50 rounded-md transition hover:bg-green-100 dark:text-green-400 dark:bg-green-900/30 dark:hover:bg-green-900/50"
                             >
@@ -331,6 +366,7 @@ export default function CarrierUpdate({ isDarkMode, toggleDarkMode }) {
                           
                           {delivery.status === 'ACCEPTED_BY_CARRIER' && (
                             <button
+                              data-package-id={getPackageId(delivery)}
                               onClick={() => updateDeliveryStatus(delivery, 'IN_TRANSIT')}
                               className="flex gap-1 items-center px-3 py-1 text-xs font-medium text-orange-600 bg-orange-50 rounded-md transition hover:bg-orange-100 dark:text-orange-400 dark:bg-orange-900/30 dark:hover:bg-orange-900/50"
                             >
@@ -341,6 +377,7 @@ export default function CarrierUpdate({ isDarkMode, toggleDarkMode }) {
                           
                           {delivery.status === 'IN_TRANSIT' && (
                             <button
+                              data-package-id={getPackageId(delivery)}
                               onClick={() => updateDeliveryStatus(delivery, 'DELIVERED')}
                               className="flex gap-1 items-center px-3 py-1 text-xs font-medium text-green-600 bg-green-50 rounded-md transition hover:bg-green-100 dark:text-green-400 dark:bg-green-900/30 dark:hover:bg-green-900/50"
                             >

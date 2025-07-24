@@ -642,7 +642,7 @@ export default function DeliveryTracking({ isDarkMode, toggleDarkMode }) {
       {/* Rating Modal */}
       {showRatingModal && selectedPackageForRating && (
         <div className="flex overflow-y-auto fixed inset-0 z-50 justify-center items-center p-4 bg-black bg-opacity-50">
-          <div className="bg-white dark:bg-gray-800 rounded-lg max-w-md w-full">
+          <div className="w-full max-w-md bg-white rounded-lg dark:bg-gray-800">
             <div className="p-6">
               <div className="flex justify-between items-center mb-6">
                 <h3 className="text-xl font-bold text-gray-900 dark:text-white">
@@ -659,7 +659,7 @@ export default function DeliveryTracking({ isDarkMode, toggleDarkMode }) {
               <div className="space-y-6">
                 {/* Package info */}
                 <div className="p-4 bg-gray-50 rounded-lg dark:bg-gray-700">
-                  <h4 className="font-medium text-gray-900 dark:text-white mb-2">
+                  <h4 className="mb-2 font-medium text-gray-900 dark:text-white">
                     Colis : {selectedPackageForRating.description}
                   </h4>
                   <p className="text-sm text-gray-600 dark:text-gray-400">
@@ -670,7 +670,7 @@ export default function DeliveryTracking({ isDarkMode, toggleDarkMode }) {
                 {/* Carrier info */}
                 {getActiveMatch(selectedPackageForRating)?.ride?.user && (
                   <div className="p-4 bg-blue-50 rounded-lg dark:bg-blue-900/20">
-                    <h4 className="font-medium text-blue-900 dark:text-blue-300 mb-2">
+                    <h4 className="mb-2 font-medium text-blue-900 dark:text-blue-300">
                       Livreur
                     </h4>
                     <p className="text-sm text-blue-700 dark:text-blue-300">
@@ -681,7 +681,7 @@ export default function DeliveryTracking({ isDarkMode, toggleDarkMode }) {
 
                 {/* Rating stars */}
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">
+                  <label className="block mb-3 text-sm font-medium text-gray-700 dark:text-gray-300">
                     Note (1-5 étoiles)
                   </label>
                   <div className="flex space-x-1">
@@ -703,14 +703,14 @@ export default function DeliveryTracking({ isDarkMode, toggleDarkMode }) {
 
                 {/* Review text */}
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  <label className="block mb-2 text-sm font-medium text-gray-700 dark:text-gray-300">
                     Commentaire (optionnel)
                   </label>
                   <textarea
                     value={review}
                     onChange={(e) => setReview(e.target.value)}
                     placeholder="Dites-nous ce que vous avez pensé de ce livreur..."
-                    className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                    className="p-3 w-full rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:border-gray-600 dark:text-white"
                     rows="3"
                   />
                 </div>
