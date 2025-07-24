@@ -101,6 +101,7 @@ const RoleBasedNavigation = ({ isDarkMode, toggleDarkMode }) => {
         { href: '/dashboard/carrier', label: t('dashboard') },
         { href: '/trajet', label: t('findPackages') },
         { href: '/matches', label: t('matches') },
+        { href: '/carrier-update', label: t('carrierUpdates') },
         { href: '/earnings', label: t('earnings') }
       ],
 
@@ -109,6 +110,7 @@ const RoleBasedNavigation = ({ isDarkMode, toggleDarkMode }) => {
         { href: '/dashboard/procarrier', label: t('dashboardPro') },
         { href: '/trajet', label: t('findPackages') },
         { href: '/matches', label: t('matches') },
+        { href: '/carrier-update', label: t('carrierUpdates') },
         { href: '/earnings', label: t('earnings') }
       ],
 
