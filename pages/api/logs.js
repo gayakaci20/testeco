@@ -342,10 +342,7 @@ async function collectRealLogs(level, limit) {
   }
 }
 export default async function handler(req, res) {
-  try {
-    // Ensure database connection is established
-    await ensureConnected();
-    let logger;
+  let logger;
   
   try {
     logger = createApiLogger('LOGS_API');

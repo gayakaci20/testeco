@@ -13,10 +13,7 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || '', {
 });
 
 export default async function handler(req, res) {
-  try {
-    // Ensure database connection is established
-    await ensureConnected();
-    if (req.method === 'GET') {
+  if (req.method === 'GET') {
     return handleGetSubscription(req, res);
   } else if (req.method === 'POST') {
     return handleCreateSubscription(req, res);
@@ -265,5 +262,4 @@ async function handleCancelSubscription(req, res) {
   } finally {
     await prisma.$disconnect();
   }
-}
 }

@@ -1,10 +1,7 @@
 import { prisma } from '../../../src/lib/prisma';
 
 export default async function handler(req, res) {
-  try {
-    // Ensure database connection is established
-    await ensureConnected();
-    const { id } = req.query;
+  const { id } = req.query;
   
   console.log(`Handling ${req.method} request to /api/packages/${id}`);
   
