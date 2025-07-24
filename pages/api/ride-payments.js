@@ -1,13 +1,13 @@
-import { PrismaClient } from '@prisma/client';
+import prisma, { ensureConnected } from '../../lib/prisma';
 import { verifyToken } from '../../lib/auth';
 import Stripe from 'stripe';
-
-const prisma = new PrismaClient();
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || '', {
   apiVersion: '2024-04-10'
 });
 
 export default async function handler(req, res) {
+  try {
+    await ensureConnected();
   try {
     // Vérifier l'authentification avec le système JWT existant
     const token = req.cookies.token || req.cookies.auth_token;
@@ -224,10 +224,14 @@ export default async function handler(req, res) {
     } else {
       return res.status(405).json({ error: 'Méthode non autorisée' });
     }
-  } catch (error) {
-    console.error('Erreur dans /api/ride-payments:', error);
-    return res.status(500).json({ error: 'Erreur serveur' });
-  } finally {
-    await prisma.$disconnect();
+    } catch (error) {
+      console.error('Erreur dans /api/ride-payments:', error);
+      return res.status(500).json({ error: 'Erreur serveur' });
+    } finally {
+      await prisma.$disconnect();
+    }
+  } catch (connectionError) {
+    console.error('Database connection error:', connectionError);
+    return res.status(500).json({ error: 'Database connection failed' });
   }
 }

@@ -1,7 +1,10 @@
-import { prisma } from '../../../src/lib/prisma';
+import prisma, { ensureConnected } from '../../../lib/prisma';
 
 export default async function handler(req, res) {
   const { id } = req.query;
+  
+  try {
+    await ensureConnected();
   
   console.log(`Handling ${req.method} request to /api/packages/${id}`);
   
@@ -51,11 +54,15 @@ export default async function handler(req, res) {
     else {
       return res.status(405).json({ error: 'Method not allowed' });
     }
-  } catch (error) {
-    console.error(`Error handling ${req.method} for package ${id}:`, error);
-    return res.status(500).json({ 
-      error: 'Internal server error', 
-      details: error.message 
-    });
+    } catch (error) {
+      console.error(`Error handling ${req.method} for package ${id}:`, error);
+      return res.status(500).json({ 
+        error: 'Internal server error', 
+        details: error.message 
+      });
+    }
+  } catch (connectionError) {
+    console.error('Database connection error:', connectionError);
+    return res.status(500).json({ error: 'Database connection failed' });
   }
 }

@@ -1,7 +1,7 @@
 // This is a login endpoint using Prisma for authentication
 import { generateToken } from '../../../lib/auth';
 import { COOKIE_MAX_AGE } from '../../../lib/auth-constants';
-import { prisma } from '../../../lib/prisma';
+import prisma, { ensureConnected } from '../../../lib/prisma';
 import bcrypt from 'bcryptjs';
 
 export default async function handler(req, res) {
@@ -12,6 +12,8 @@ export default async function handler(req, res) {
     return res.status(405).json({ message: 'Method not allowed' });
   }
   try {
+    await ensureConnected();
+    
     // Get credentials from request body
     const { email, password } = req.body;
     console.log(`Login attempt for email: ${email}`);

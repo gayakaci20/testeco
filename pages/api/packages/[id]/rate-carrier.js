@@ -1,11 +1,12 @@
-import { PrismaClient } from "@prisma/client";
-
-const prisma = new PrismaClient();
+import prisma, { ensureConnected } from '../../../../lib/prisma';
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
+  
+  try {
+    await ensureConnected();
   const { id: packageId } = req.query;
   const { rating, review } = req.body;
   const userId = req.headers['x-user-id'];
@@ -116,8 +117,12 @@ export default async function handler(req, res) {
       message: 'Évaluation enregistrée avec succès'
     });
 
-  } catch (error) {
-    console.error('Error rating carrier:', error);
-    res.status(500).json({ error: 'Internal server error' });
+    } catch (error) {
+      console.error('Error rating carrier:', error);
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  } catch (connectionError) {
+    console.error('Database connection error:', connectionError);
+    res.status(500).json({ error: 'Database connection failed' });
   }
 }

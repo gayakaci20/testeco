@@ -3,7 +3,7 @@
  * Utilise le token JWT pour authentifier l'utilisateur
  */
 import { verifyToken } from '../../../lib/auth';
-import prisma, { ensureConnected } from '../../../lib/prisma-stable';
+import prisma, { ensureConnected } from '../../../lib/prisma';
 
 export default async function handler(req, res) {
   // Assurer que la réponse est toujours du JSON

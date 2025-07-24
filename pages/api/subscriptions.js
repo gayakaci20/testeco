@@ -1,8 +1,6 @@
-import { PrismaClient } from '@prisma/client';
+import prisma, { ensureConnected } from '../../lib/prisma';
 import { verifyToken } from '../../lib/auth';
 import Stripe from 'stripe';
-
-const prisma = new PrismaClient();
 
 // Validate Stripe key before initializing
 if (!process.env.STRIPE_SECRET_KEY || process.env.STRIPE_SECRET_KEY === 'your-stripe-secret-key') {
@@ -13,16 +11,23 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || '', {
 });
 
 export default async function handler(req, res) {
-  if (req.method === 'GET') {
-    return handleGetSubscription(req, res);
-  } else if (req.method === 'POST') {
-    return handleCreateSubscription(req, res);
-  } else if (req.method === 'PUT') {
-    return handleUpdateSubscription(req, res);
-  } else if (req.method === 'DELETE') {
-    return handleCancelSubscription(req, res);
-  } else {
-    res.status(405).json({ error: 'Method not allowed' });
+  try {
+    await ensureConnected();
+    
+    if (req.method === 'GET') {
+      return handleGetSubscription(req, res);
+    } else if (req.method === 'POST') {
+      return handleCreateSubscription(req, res);
+    } else if (req.method === 'PUT') {
+      return handleUpdateSubscription(req, res);
+    } else if (req.method === 'DELETE') {
+      return handleCancelSubscription(req, res);
+    } else {
+      return res.status(405).json({ error: 'Method not allowed' });
+    }
+  } catch (connectionError) {
+    console.error('Database connection error:', connectionError);
+    return res.status(500).json({ error: 'Database connection failed' });
   }
 }
 // Get user's subscription status

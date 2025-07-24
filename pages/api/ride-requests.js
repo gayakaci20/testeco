@@ -1,11 +1,11 @@
-import { PrismaClient } from '@prisma/client';
+import prisma, { ensureConnected } from '../../lib/prisma';
 import { verifyToken } from '../../lib/auth';
 import { calculateFullRidePrice } from '../../lib/priceCalculator';
 
-const prisma = new PrismaClient();
-
 export default async function handler(req, res) {
   try {
+    await ensureConnected();
+    
     // Vérifier l'authentification avec le système JWT existant
     const token = req.cookies.token || req.cookies.auth_token;
     if (!token) {

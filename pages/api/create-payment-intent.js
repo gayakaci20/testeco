@@ -1,5 +1,5 @@
 import Stripe from 'stripe';
-import prisma from '../../lib/prisma.js';
+import prisma, { ensureConnected } from '../../lib/prisma';
 import { verifyToken } from '../../lib/auth.js';
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || '', {
@@ -10,6 +10,9 @@ export default async function handler(req, res) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
+  
+  try {
+    await ensureConnected();
   try {
     const {
       merchantId,
@@ -140,7 +143,11 @@ export default async function handler(req, res) {
       error: 'Internal server error', 
       details: error.message 
     });
-  } finally {
-    // Using shared prisma instance, no need to disconnect
+    } finally {
+      // Using shared prisma instance, no need to disconnect
+    }
+  } catch (connectionError) {
+    console.error('Database connection error:', connectionError);
+    res.status(500).json({ error: 'Database connection failed' });
   }
 }

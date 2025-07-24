@@ -342,7 +342,10 @@ async function collectRealLogs(level, limit) {
   }
 }
 export default async function handler(req, res) {
-  let logger;
+  try {
+    await ensureConnected();
+    
+    let logger;
   
   try {
     logger = createApiLogger('LOGS_API');
@@ -424,10 +427,18 @@ export default async function handler(req, res) {
     console.error('Erreur lors de la gestion des logs:', error);
     if (logger) logger.error('Erreur lors de la gestion des logs', { error: error.message });
     
+      return res.status(500).json({
+        success: false,
+        error: error.message || 'Erreur inconnue',
+        message: 'Erreur interne du serveur'
+      });
+    }
+  } catch (connectionError) {
+    console.error('Database connection error:', connectionError);
     return res.status(500).json({
       success: false,
-      error: error.message || 'Erreur inconnue',
-      message: 'Erreur interne du serveur'
+      error: 'Database connection failed',
+      message: 'Erreur de connexion à la base de données'
     });
   }
 }
