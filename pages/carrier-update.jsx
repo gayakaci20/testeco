@@ -103,14 +103,32 @@ export default function CarrierUpdate({ isDarkMode, toggleDarkMode }) {
   };
 
   const getPackageId = (delivery) => {
-    return delivery.packageId || delivery.id;
+    console.log('📦 Getting package ID from delivery:', delivery);
+    // Try different possible structures
+    const packageId = delivery.package?.id || delivery.packageId || delivery.id;
+    console.log('📦 Extracted package ID:', packageId);
+    return packageId;
   };
 
   const updateDeliveryStatus = async (delivery, status) => {
     try {
       const packageId = getPackageId(delivery);
-      const response = await fetch(`/api/packages/${packageId}/status`, {
-        method: 'POST',
+      
+      if (!packageId) {
+        console.error('❌ No package ID found in delivery object:', delivery);
+        alert('Erreur: ID du colis non trouvé. Veuillez rafraîchir la page et réessayer.');
+        return;
+      }
+      
+      console.log('🔄 Tentative de mise à jour:', { 
+        delivery: delivery, 
+        packageId: packageId, 
+        newStatus: status,
+        currentStatus: delivery.status 
+      });
+      
+      const response = await fetch(`/api/packages/${packageId}/update-status`, {
+        method: 'PUT',
         headers: {
           'Content-Type': 'application/json'
         },
@@ -118,8 +136,15 @@ export default function CarrierUpdate({ isDarkMode, toggleDarkMode }) {
         body: JSON.stringify({ status })
       });
 
+      console.log('📡 Réponse API:', { 
+        status: response.status, 
+        statusText: response.statusText,
+        ok: response.ok 
+      });
+
       if (response.ok) {
-        console.log(`✅ Statut mis à jour: ${delivery.title} -> ${status}`);
+        const result = await response.json();
+        console.log(`✅ Statut mis à jour: ${delivery.title} -> ${status}`, result);
         
         // Déclencher l'événement de mise à jour en temps réel pour delivery-tracking.jsx
         const updateEvent = {
@@ -154,8 +179,13 @@ export default function CarrierUpdate({ isDarkMode, toggleDarkMode }) {
           }, 2000);
         }
       } else {
-        console.error('Failed to update delivery status');
-        alert('Erreur lors de la mise à jour du statut');
+        const errorData = await response.json().catch(() => ({}));
+        console.error('❌ Échec de la mise à jour:', { 
+          status: response.status, 
+          statusText: response.statusText,
+          error: errorData 
+        });
+        alert(`Erreur lors de la mise à jour du statut: ${errorData.error || response.statusText}`);
       }
     } catch (error) {
       console.error('Error updating delivery status:', error);

@@ -121,54 +121,71 @@ const StripePaymentForm = ({
   );
 };
 
-// Component for direct card payment (ride requests)
-const DirectCardPaymentForm = ({ 
+// Component for Stripe Elements payment (ride requests) - using secure Stripe Elements
+const RidePaymentForm = ({ 
   paymentData, 
   onPaymentSuccess, 
-  onPaymentError,
+  onPaymentError, 
+  clientSecret,
   isProcessing,
   setIsProcessing 
 }) => {
-  const [formData, setFormData] = useState({
-    cardNumber: '',
-    expiryDate: '',
-    cvv: '',
-    cardholderName: ''
-  });
+  const stripe = useStripe();
+  const elements = useElements();
   const [error, setError] = useState(null);
 
   const handleSubmit = async (event) => {
     event.preventDefault();
+
+    if (!stripe || !elements) {
+      setError('Stripe n\'est pas encore chargé. Veuillez patienter...');
+      return;
+    }
+
     setIsProcessing(true);
     setError(null);
 
     try {
-      console.log('🚗 Processing ride request payment:', paymentData.id);
-      
-      const response = await fetch('/api/ride-payments', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          rideRequestId: paymentData.id,
-          paymentData: {
-            paymentMethod: 'CARD',
-            cardNumber: formData.cardNumber,
-            expiryDate: formData.expiryDate,
-            cvv: formData.cvv,
-            cardholderName: formData.cardholderName
-          }
-        })
+      // Submit the payment form
+      const { error: submitError } = await elements.submit();
+      if (submitError) {
+        throw new Error(submitError.message);
+      }
+
+      // Confirm the payment
+      const { error: paymentError, paymentIntent } = await stripe.confirmPayment({
+        elements,
+        clientSecret,
+        redirect: 'if_required',
       });
 
-      const result = await response.json();
+      if (paymentError) {
+        throw new Error(paymentError.message);
+      }
 
-      if (response.ok && result.success) {
-        console.log('✅ Ride payment successful:', result);
-        onPaymentSuccess(result);
+      if (paymentIntent.status === 'succeeded') {
+        // Confirm the payment on the backend
+        const confirmResponse = await fetch('/api/ride-payments', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            rideRequestId: paymentData.id,
+            paymentIntentId: paymentIntent.id,
+            confirmPayment: true
+          })
+        });
+
+        const confirmResult = await confirmResponse.json();
+
+        if (confirmResponse.ok && confirmResult.success) {
+          onPaymentSuccess(confirmResult);
+        } else {
+          throw new Error(confirmResult.error || 'Payment confirmation failed');
+        }
       } else {
-        throw new Error(result.error || 'Payment failed');
+        throw new Error(`Payment status: ${paymentIntent.status}`);
       }
     } catch (err) {
       console.error('Payment error:', err);
@@ -176,31 +193,6 @@ const DirectCardPaymentForm = ({
       onPaymentError(err);
     } finally {
       setIsProcessing(false);
-    }
-  };
-
-  const handleInputChange = (e) => {
-    const { name, value } = e.target;
-    
-    if (name === 'cardNumber') {
-      // Format card number
-      const formattedValue = value.replace(/\s/g, '').replace(/(\d{4})/g, '$1 ').trim();
-      if (formattedValue.replace(/\s/g, '').length <= 16) {
-        setFormData(prev => ({ ...prev, [name]: formattedValue }));
-      }
-    } else if (name === 'expiryDate') {
-      // Format expiry date
-      const formattedValue = value.replace(/\D/g, '').replace(/(\d{2})(\d{2})/, '$1/$2');
-      if (formattedValue.length <= 5) {
-        setFormData(prev => ({ ...prev, [name]: formattedValue }));
-      }
-    } else if (name === 'cvv') {
-      // Format CVV
-      if (value.replace(/\D/g, '').length <= 3) {
-        setFormData(prev => ({ ...prev, [name]: value.replace(/\D/g, '') }));
-      }
-    } else {
-      setFormData(prev => ({ ...prev, [name]: value }));
     }
   };
 
@@ -213,75 +205,15 @@ const DirectCardPaymentForm = ({
         </div>
       )}
       
-      <div className="space-y-4">
-        <div>
-          <label className="block mb-2 text-sm font-medium text-gray-700">
-            Nom sur la carte
-          </label>
-          <input
-            type="text"
-            name="cardholderName"
-            value={formData.cardholderName}
-            onChange={handleInputChange}
-            placeholder="John Doe"
-            className="px-3 py-2 w-full rounded-md border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500"
-            required
-          />
-        </div>
-        
-        <div>
-          <label className="block mb-2 text-sm font-medium text-gray-700">
-            Numéro de carte
-          </label>
-          <input
-            type="text"
-            name="cardNumber"
-            value={formData.cardNumber}
-            onChange={handleInputChange}
-            placeholder="1234 5678 9012 3456"
-            className="px-3 py-2 w-full rounded-md border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500"
-            required
-          />
-        </div>
-        
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <label className="block mb-2 text-sm font-medium text-gray-700">
-              Date d'expiration
-            </label>
-            <input
-              type="text"
-              name="expiryDate"
-              value={formData.expiryDate}
-              onChange={handleInputChange}
-              placeholder="MM/AA"
-              className="px-3 py-2 w-full rounded-md border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500"
-              required
-            />
-          </div>
-          
-          <div>
-            <label className="block mb-2 text-sm font-medium text-gray-700">
-              CVV
-            </label>
-            <input
-              type="text"
-              name="cvv"
-              value={formData.cvv}
-              onChange={handleInputChange}
-              placeholder="123"
-              className="px-3 py-2 w-full rounded-md border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500"
-              required
-            />
-          </div>
-        </div>
+      <div className="p-4 bg-white rounded-lg border">
+        <PaymentElement />
       </div>
       
       <button
         type="submit"
-        disabled={isProcessing}
+        disabled={!stripe || isProcessing}
         className={`w-full flex justify-center items-center px-4 py-3 font-medium text-white rounded-md ${
-          isProcessing
+          !stripe || isProcessing
             ? 'bg-gray-400 cursor-not-allowed'
             : 'bg-blue-600 hover:bg-blue-700 active:bg-blue-800'
         } transition-colors`}
@@ -631,10 +563,47 @@ export default function PaymentProcess() {
             throw new Error(result.error || 'Failed to initialize payment');
           }
         } else if (detectedType === 'ride_request' && rideRequestId) {
-          // For ride requests, we use a different approach - no client secret needed
+          // For ride requests, create a payment intent like for box rentals
           console.log('🚗 Processing ride request payment for:', rideRequestId);
-          endpoint = `/api/ride-requests/${rideRequestId}`;
-          id = rideRequestId;
+          const response = await fetch('/api/ride-payments', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              rideRequestId: rideRequestId,
+              createPaymentIntent: true
+            })
+          });
+
+          console.log('📡 Ride Payment API Response status:', response.status);
+
+          const result = await response.json();
+
+          if (response.ok && result.success) {
+            console.log('✅ Ride Payment Intent created successfully');
+            
+            // Fetch ride request details for display
+            const rideResponse = await fetch(`/api/ride-requests/${rideRequestId}`, {
+              headers: {
+                'x-user-id': user?.id || ''
+              }
+            });
+            
+            const rideData = await rideResponse.json();
+            
+            setPaymentData({
+              id: rideRequestId,
+              type: 'ride_request',
+              amount: rideData.price,
+              description: `Trajet: ${rideData.ride?.origin || 'Origine'} → ${rideData.ride?.destination || 'Destination'}`,
+              rideRequest: rideData
+            });
+            setClientSecret(result.clientSecret);
+          } else {
+            console.error('❌ Ride Payment Intent creation failed:', result);
+            throw new Error(result.error || 'Failed to initialize ride payment');
+          }
         } else if (detectedType === 'match' && matchId) {
           endpoint = `/api/matches/${matchId}`;
           id = matchId;
@@ -839,15 +808,18 @@ export default function PaymentProcess() {
                 setIsProcessing={setIsProcessing}
               />
             </Elements>
-          ) : paymentData?.type === 'ride_request' ? (
-            // Direct card form for ride requests
-            <DirectCardPaymentForm
-              paymentData={paymentData}
-              onPaymentSuccess={handlePaymentSuccess}
-              onPaymentError={handlePaymentError}
-              isProcessing={isProcessing}
-              setIsProcessing={setIsProcessing}
-            />
+          ) : paymentData?.type === 'ride_request' && clientSecret ? (
+            // Stripe Elements for ride requests - secure payment
+            <Elements stripe={stripePromise} options={{ ...stripeOptions, clientSecret }}>
+              <RidePaymentForm
+                paymentData={paymentData}
+                onPaymentSuccess={handlePaymentSuccess}
+                onPaymentError={handlePaymentError}
+                clientSecret={clientSecret}
+                isProcessing={isProcessing}
+                setIsProcessing={setIsProcessing}
+              />
+            </Elements>
           ) : (
             /* Use legacy form for other payment types (matches, packages, etc.) */
             <LegacyPaymentForm
