@@ -1,10 +1,10 @@
 import prisma, { ensureConnected } from '../../../../lib/prisma';
 
 export default async function handler(req, res) {
-      // Ensure database connection before any queries
-    await ensureConnected();
+  // Ensure database connection before any queries
+  await ensureConnected();
 
-const { id } = req.query;
+  const { id } = req.query;
   
   console.log('🔄 API /api/packages/[id]/update-status called:', { id, method: req.method, body: req.body });
   
@@ -13,18 +13,45 @@ const { id } = req.query;
   }
 
   try {
+    // Verify authentication - get user from token
+    const { verifyToken } = await import('../../../../lib/auth');
+    const token = req.cookies.auth_token || req.cookies.token;
+    
+    if (!token) {
+      return res.status(401).json({ error: 'Unauthorized - No token' });
+    }
+    
+    const decodedToken = await verifyToken(token);
+    if (!decodedToken) {
+      return res.status(401).json({ error: 'Unauthorized - Invalid token' });
+    }
+    
+    const userId = decodedToken.id;
+    
+    // Verify user is a carrier
+    const user = await prisma.user.findUnique({
+      where: { id: userId }
+    });
+
+    if (!user || user.role !== 'CARRIER') {
+      return res.status(403).json({ error: 'Access denied. Carrier role required.' });
+    }
+
     const { status } = req.body;
     
-    console.log('📦 Updating package status:', { packageId: id, newStatus: status });
+    console.log('📦 Updating package status:', { packageId: id, newStatus: status, carrierId: userId });
     
     if (!status) {
       return res.status(400).json({ error: 'Status is required' });
     }
 
-    // Find the match first to update it
+    // Find the match for this package and verify the carrier is assigned to it
     const match = await prisma.match.findFirst({
       where: {
-        package: { id: id }
+        package: { id: id },
+        ride: {
+          userId: userId // Ensure the match belongs to the authenticated carrier
+        }
       },
       include: {
         package: true,
@@ -36,10 +63,16 @@ const { id } = req.query;
       }
     });
     
-    console.log('🔍 Found match:', match ? `Match ID: ${match.id}, Status: ${match.status}` : 'No match found');
+    console.log('🔍 Found match for carrier:', match ? `Match ID: ${match.id}, Status: ${match.status}, Carrier: ${match.ride.user.firstName}` : 'No match found for this carrier');
 
     if (!match) {
-      return res.status(404).json({ error: 'Match not found for this package' });
+      return res.status(404).json({ error: 'Match not found for this package and carrier. You can only update packages assigned to you.' });
+    }
+
+    // Verify the match status allows this update
+    const allowedStatuses = ['PENDING', 'CONFIRMED', 'ACCEPTED_BY_SENDER', 'ACCEPTED_BY_CARRIER', 'IN_PROGRESS'];
+    if (!allowedStatuses.includes(match.status)) {
+      return res.status(400).json({ error: `Cannot update package status. Current match status: ${match.status}` });
     }
 
     // Update the match status based on the requested status
@@ -56,14 +89,20 @@ const { id } = req.query;
     console.log('🔄 Updating match status from', match.status, 'to', matchStatus);
     await prisma.match.update({
       where: { id: match.id },
-      data: { status: matchStatus }
+      data: { 
+        status: matchStatus,
+        updatedAt: new Date()
+      }
     });
 
     // Update the package status
     console.log('🔄 Updating package status to', status);
     const updatedPackage = await prisma.package.update({
       where: { id: id },
-      data: { status: status }
+      data: { 
+        status: status,
+        updatedAt: new Date()
+      }
     });
 
     // Create notifications based on status
@@ -102,15 +141,21 @@ const { id } = req.query;
       });
     }
 
-    console.log(`✅ Package ${id} status updated to ${status}`);
+    console.log(`✅ Package ${id} status updated to ${status} by carrier ${userId}`);
     res.status(200).json({ 
       success: true, 
       package: updatedPackage,
+      match: {
+        id: match.id,
+        status: matchStatus
+      },
       message: `Status updated to ${status}` 
     });
 
   } catch (error) {
     console.error('Error updating package status:', error);
-    res.status(500).json({ error: 'Internal server error' });
+    res.status(500).json({ error: 'Internal server error', details: error.message });
+  } finally {
+    await prisma.$disconnect();
   }
 } 

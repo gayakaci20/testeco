@@ -336,11 +336,18 @@ export default function CarrierDashboard({ isDarkMode, toggleDarkMode }) {
       
       if (!packageId) {
         console.error('❌ No package ID found in delivery object:', delivery);
-        alert('Erreur: ID du colis non trouvé');
+        alert('Erreur: ID du colis non trouvé. Veuillez rafraîchir la page et réessayer.');
         return;
       }
       
       console.log('🚀 Updating delivery status:', { packageId, status, delivery });
+      
+      // Disable the button during update to prevent multiple clicks
+      const updateButtons = document.querySelectorAll(`[data-package-id="${packageId}"]`);
+      updateButtons.forEach(btn => {
+        btn.disabled = true;
+        btn.innerHTML = btn.innerHTML.replace(/Prendre en charge|Démarrer transport|Marquer comme livré/, 'Mise à jour...');
+      });
       
       const response = await fetch(`/api/packages/${packageId}/update-status`, {
         method: 'PUT',
@@ -355,9 +362,15 @@ export default function CarrierDashboard({ isDarkMode, toggleDarkMode }) {
       if (response.ok) {
         const data = await response.json();
         console.log('✅ Status update successful:', data);
-        await refreshData();
+        
+        // Show success message with more details
         setShowSuccessMessage(true);
         setTimeout(() => setShowSuccessMessage(false), 3000);
+        
+        // Refresh data after a short delay to ensure backend is updated
+        setTimeout(async () => {
+          await refreshData();
+        }, 500);
         
         // Notifier les clients en temps réel (optionnel)
         if (window.localStorage) {
@@ -376,11 +389,34 @@ export default function CarrierDashboard({ isDarkMode, toggleDarkMode }) {
       } else {
         const errorData = await response.json().catch(() => ({}));
         console.error('❌ Status update failed:', errorData);
-        alert(`Erreur lors de la mise à jour: ${errorData.error || 'Erreur inconnue'}`);
+        
+        let errorMessage = 'Erreur inconnue';
+        if (response.status === 401) {
+          errorMessage = 'Session expirée. Veuillez vous reconnecter.';
+        } else if (response.status === 403) {
+          errorMessage = 'Vous n\'êtes pas autorisé à modifier ce colis.';
+        } else if (response.status === 404) {
+          errorMessage = 'Colis non trouvé ou non assigné à vous. Veuillez rafraîchir la page.';
+        } else {
+          errorMessage = errorData.error || 'Erreur lors de la mise à jour';
+        }
+        
+        alert(`Erreur: ${errorMessage}`);
+        
+        // Re-enable buttons on error  
+        updateButtons.forEach(btn => {
+          btn.disabled = false;
+        });
       }
     } catch (error) {
       console.error('Error updating delivery status:', error);
-      alert(`Erreur réseau: ${error.message}`);
+      alert(`Erreur réseau: ${error.message}. Vérifiez votre connexion internet et réessayez.`);
+      
+      // Re-enable buttons on error
+      const updateButtons = document.querySelectorAll(`[data-package-id="${packageId}"]`);
+      updateButtons.forEach(btn => {
+        btn.disabled = false;
+      });
     }
   };
 
@@ -1449,6 +1485,7 @@ export default function CarrierDashboard({ isDarkMode, toggleDarkMode }) {
                               {/* Actions selon l'état de la livraison */}
                               {(delivery.status === 'CONFIRMED' || delivery.status === 'ACCEPTED_BY_SENDER') && (
                                 <button
+                                  data-package-id={getPackageId(delivery)}
                                   onClick={() => updateDeliveryStatus(delivery, 'ACCEPTED_BY_CARRIER')}
                                   className="flex gap-1 items-center px-3 py-1 text-sm font-medium text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300"
                                 >
@@ -1459,6 +1496,7 @@ export default function CarrierDashboard({ isDarkMode, toggleDarkMode }) {
                               
                               {delivery.status === 'ACCEPTED_BY_CARRIER' && (
                                 <button
+                                  data-package-id={getPackageId(delivery)}
                                   onClick={() => updateDeliveryStatus(delivery, 'IN_TRANSIT')}
                                   className="flex gap-1 items-center px-3 py-1 text-sm font-medium text-orange-600 dark:text-orange-400 hover:text-orange-700 dark:hover:text-orange-300"
                                 >
@@ -1470,6 +1508,7 @@ export default function CarrierDashboard({ isDarkMode, toggleDarkMode }) {
                               {delivery.status === 'IN_TRANSIT' && (
                                 <div className="flex gap-1">
                                   <button
+                                    data-package-id={getPackageId(delivery)}
                                     onClick={() => updateDeliveryStatus(delivery, 'DELIVERED')}
                                     className="flex gap-1 items-center px-3 py-1 text-sm font-medium text-green-600 dark:text-green-400 hover:text-green-700 dark:hover:text-green-300"
                                   >

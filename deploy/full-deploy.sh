@@ -119,6 +119,7 @@ NEXTAUTH_URL=https://ecodeli.pro
 # Secrets JWT sécurisés (IMPORTANT: Changer en production)
 JWT_SECRET=+IHgn4XgWSry/7K0IwgjbjgLned5S1MeLwbI4mRT+5VQ02yH7nohP3KWX8/MGRdj
 NEXTAUTH_SECRET=d7f82b4e8c1a9e6f3b0c5d2a8e1f7b4c6d3a9e2f8b1c7d5e0a9f4b8c2d6e1f3a
+NEXT_PUBLIC_GOOGLE_MAPS_KEY=AIzaSyANYtALRlop0ARSz4HXv9XzR-CPRgJ4Vss
 
 # Configuration Redis
 REDIS_URL=redis://redis:6379
