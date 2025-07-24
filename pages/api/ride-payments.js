@@ -14,12 +14,10 @@ export default async function handler(req, res) {
     if (!token) {
       return res.status(401).json({ error: 'Token manquant' });
     }
-
     const user = await verifyToken(token);
     if (!user) {
       return res.status(401).json({ error: 'Token invalide' });
     }
-
     if (req.method === 'POST') {
       const { 
         rideRequestId, 
@@ -29,7 +27,6 @@ export default async function handler(req, res) {
       if (!rideRequestId) {
         return res.status(400).json({ error: 'rideRequestId est requis' });
       }
-
       // Vérifier que la ride request existe et appartient à l'utilisateur
       const rideRequest = await prisma.rideRequest.findUnique({
         where: { id: rideRequestId },
@@ -43,17 +40,14 @@ export default async function handler(req, res) {
       if (!rideRequest) {
         return res.status(404).json({ error: 'Demande de trajet non trouvée' });
       }
-
       // Vérifier que l'utilisateur est bien le passager
       if (rideRequest.passengerId !== user.id) {
         return res.status(403).json({ error: 'Non autorisé - vous ne pouvez payer que vos propres trajets' });
       }
-
       // Vérifier que la demande est acceptée
       if (rideRequest.status !== 'ACCEPTED') {
         return res.status(400).json({ error: 'Cette demande de trajet n\'est pas acceptée' });
       }
-
       // Vérifier qu'il n'y a pas déjà un paiement
       const existingPayment = await prisma.payment.findFirst({
         where: {
@@ -65,12 +59,10 @@ export default async function handler(req, res) {
       if (existingPayment) {
         return res.status(400).json({ error: 'Ce trajet est déjà payé' });
       }
-
       const amount = parseFloat(rideRequest.price) || 0;
       if (amount <= 0) {
         return res.status(400).json({ error: 'Prix invalide' });
       }
-
       let paymentStatus = 'PENDING';
       let transactionId = null;
       let stripePaymentIntentId = null;
@@ -87,7 +79,6 @@ export default async function handler(req, res) {
             if (!cardNumber || !expiryDate || !cvv) {
               return res.status(400).json({ error: 'Informations de carte incomplètes' });
             }
-
             // Créer un token Stripe
             const [exp_month, exp_year] = expiryDate.split('/');
             const token = await stripe.tokens.create({
@@ -105,7 +96,6 @@ export default async function handler(req, res) {
             });
             tokenId = token.id;
           }
-
           // Créer le paiement avec le token
           const charge = await stripe.charges.create({
             amount: Math.round(amount * 100), // En centimes
@@ -133,7 +123,6 @@ export default async function handler(req, res) {
           });
         }
       }
-
       // Créer le paiement dans la base de données
       const payment = await prisma.payment.create({
         data: {
@@ -192,7 +181,6 @@ export default async function handler(req, res) {
           }
         });
       }
-
       return res.status(201).json({
         success: true,
         payment,
@@ -236,11 +224,10 @@ export default async function handler(req, res) {
     } else {
       return res.status(405).json({ error: 'Méthode non autorisée' });
     }
-
   } catch (error) {
     console.error('Erreur dans /api/ride-payments:', error);
     return res.status(500).json({ error: 'Erreur serveur' });
   } finally {
     await prisma.$disconnect();
   }
-} 
+}

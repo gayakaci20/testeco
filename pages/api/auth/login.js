@@ -11,7 +11,6 @@ export default async function handler(req, res) {
   if (req.method !== 'POST') {
     return res.status(405).json({ message: 'Method not allowed' });
   }
-
   try {
     // Get credentials from request body
     const { email, password } = req.body;
@@ -21,13 +20,11 @@ export default async function handler(req, res) {
     if (!email || !password) {
       return res.status(400).json({ message: 'Email and password are required' });
     }
-
     // For development testing, accept any valid email format with any password
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(email)) {
       return res.status(400).json({ message: 'Invalid email format' });
     }
-
     // Check if user exists in database
     let user;
     
@@ -44,14 +41,12 @@ export default async function handler(req, res) {
       console.error('Database error during login:', dbError);
       return res.status(500).json({ message: 'Database connection error' });
     }
-
     // Validate password
     const isPasswordValid = await bcrypt.compare(password, user.password);
     
     if (!isPasswordValid) {
       return res.status(400).json({ message: 'Invalid email or password' });
     }
-
     // Generate JWT token
     const token = await generateToken(user);
 

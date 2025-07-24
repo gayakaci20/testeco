@@ -3,10 +3,20 @@ import { verifyToken } from '../../lib/auth';
 import Stripe from 'stripe';
 
 const prisma = new PrismaClient();
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
+
+// Validate Stripe key before initializing
+if (!process.env.STRIPE_SECRET_KEY || process.env.STRIPE_SECRET_KEY === 'your-stripe-secret-key') {
+  console.error('❌ STRIPE_SECRET_KEY is missing or not configured properly');
+}
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || '', {
+  apiVersion: '2023-10-16',
+});
 
 export default async function handler(req, res) {
-  if (req.method === 'GET') {
+  try {
+    // Ensure database connection is established
+    await ensureConnected();
+    if (req.method === 'GET') {
     return handleGetSubscription(req, res);
   } else if (req.method === 'POST') {
     return handleCreateSubscription(req, res);
@@ -18,7 +28,6 @@ export default async function handler(req, res) {
     res.status(405).json({ error: 'Method not allowed' });
   }
 }
-
 // Get user's subscription status
 async function handleGetSubscription(req, res) {
   try {
@@ -26,12 +35,10 @@ async function handleGetSubscription(req, res) {
     if (!token) {
       return res.status(401).json({ error: 'Non autorisé' });
     }
-
     const decoded = await verifyToken(token);
     if (!decoded) {
       return res.status(401).json({ error: 'Token invalide' });
     }
-
     const subscription = await prisma.subscription.findFirst({
       where: {
         userId: decoded.id,
@@ -60,7 +67,6 @@ async function handleGetSubscription(req, res) {
     await prisma.$disconnect();
   }
 }
-
 // Create new subscription
 async function handleCreateSubscription(req, res) {
   try {
@@ -68,12 +74,10 @@ async function handleCreateSubscription(req, res) {
     if (!token) {
       return res.status(401).json({ error: 'Non autorisé' });
     }
-
     const decoded = await verifyToken(token);
     if (!decoded) {
       return res.status(401).json({ error: 'Token invalide' });
     }
-
     // Check if user is provider or carrier
     const user = await prisma.user.findUnique({
       where: { id: decoded.id }
@@ -82,7 +86,6 @@ async function handleCreateSubscription(req, res) {
     if (!user || !['PROVIDER', 'SERVICE_PROVIDER', 'CARRIER'].includes(user.role)) {
       return res.status(403).json({ error: 'Seuls les prestataires et transporteurs peuvent s\'abonner' });
     }
-
     // Check if user already has an active subscription
     const existingSubscription = await prisma.subscription.findFirst({
       where: {
@@ -94,7 +97,11 @@ async function handleCreateSubscription(req, res) {
     if (existingSubscription) {
       return res.status(400).json({ error: 'Vous avez déjà un abonnement actif' });
     }
-
+    // Check if Stripe is properly configured
+    if (!process.env.STRIPE_SECRET_KEY || process.env.STRIPE_SECRET_KEY === 'your-stripe-secret-key') {
+      console.error('❌ Stripe not configured properly');
+      return res.status(500).json({ error: 'Configuration Stripe manquante. Contactez l\'administrateur.' });
+    }
     // Create Stripe customer if doesn't exist
     let stripeCustomer;
     try {
@@ -116,9 +123,11 @@ async function handleCreateSubscription(req, res) {
       }
     } catch (stripeError) {
       console.error('Stripe customer error:', stripeError);
-      return res.status(400).json({ error: 'Erreur lors de la création du client Stripe' });
+      return res.status(400).json({ 
+        error: 'Erreur lors de la création du client Stripe',
+        details: stripeError.message 
+      });
     }
-
     // Create payment intent for subscription
     const paymentIntent = await stripe.paymentIntents.create({
       amount: 1000, // 10€ in cents
@@ -160,7 +169,6 @@ async function handleCreateSubscription(req, res) {
     await prisma.$disconnect();
   }
 }
-
 // Update subscription (mainly for payment confirmation)
 async function handleUpdateSubscription(req, res) {
   try {
@@ -170,19 +178,16 @@ async function handleUpdateSubscription(req, res) {
     if (!token) {
       return res.status(401).json({ error: 'Non autorisé' });
     }
-
     const decoded = await verifyToken(token);
     if (!decoded) {
       return res.status(401).json({ error: 'Token invalide' });
     }
-
     // Verify payment with Stripe
     const paymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId);
     
     if (paymentIntent.status !== 'succeeded') {
       return res.status(400).json({ error: 'Le paiement n\'a pas été confirmé' });
     }
-
     // Update subscription status
     const now = new Date();
     const nextMonth = new Date();
@@ -214,7 +219,6 @@ async function handleUpdateSubscription(req, res) {
     await prisma.$disconnect();
   }
 }
-
 // Cancel subscription
 async function handleCancelSubscription(req, res) {
   try {
@@ -222,12 +226,10 @@ async function handleCancelSubscription(req, res) {
     if (!token) {
       return res.status(401).json({ error: 'Non autorisé' });
     }
-
     const decoded = await verifyToken(token);
     if (!decoded) {
       return res.status(401).json({ error: 'Token invalide' });
     }
-
     const subscription = await prisma.subscription.findFirst({
       where: {
         userId: decoded.id,
@@ -238,7 +240,6 @@ async function handleCancelSubscription(req, res) {
     if (!subscription) {
       return res.status(404).json({ error: 'Aucun abonnement actif trouvé' });
     }
-
     // Update subscription
     const canceledSubscription = await prisma.subscription.update({
       where: {
@@ -264,4 +265,5 @@ async function handleCancelSubscription(req, res) {
   } finally {
     await prisma.$disconnect();
   }
-} 
+}
+}

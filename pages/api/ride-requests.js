@@ -11,12 +11,10 @@ export default async function handler(req, res) {
     if (!token) {
       return res.status(401).json({ error: 'Token manquant' });
     }
-
     const user = await verifyToken(token);
     if (!user) {
       return res.status(401).json({ error: 'Token invalide' });
     }
-
     if (req.method === 'POST') {
       const { 
         rideId, 
@@ -36,15 +34,12 @@ export default async function handler(req, res) {
       if (!ride) {
         return res.status(404).json({ error: 'Trajet non trouvé' });
       }
-
       if (ride.status !== 'PENDING' && ride.status !== 'CONFIRMED') {
         return res.status(400).json({ error: 'Ce trajet n\'est plus disponible' });
       }
-
       if (ride.availableSpace < requestedSeats) {
         return res.status(400).json({ error: 'Pas assez de places disponibles' });
       }
-
       // Vérifier qu'il n'y a pas déjà une demande en cours
       const existingRequest = await prisma.rideRequest.findFirst({
         where: {
@@ -59,7 +54,6 @@ export default async function handler(req, res) {
       if (existingRequest) {
         return res.status(400).json({ error: 'Vous avez déjà une demande en cours pour ce trajet' });
       }
-
       // Calculer le prix total de la course pour ce passager
       let totalPrice = 0;
       try {
@@ -86,7 +80,6 @@ export default async function handler(req, res) {
         // Fallback: utiliser un prix minimum
         totalPrice = 10.00 * parseInt(requestedSeats);
       }
-
       // Créer la demande de course
       const rideRequest = await prisma.rideRequest.create({
         data: {
@@ -133,7 +126,6 @@ export default async function handler(req, res) {
         message: 'Demande de course envoyée avec succès' 
       });
     }
-
     if (req.method === 'GET') {
       const userId = user.id;
       
@@ -161,7 +153,6 @@ export default async function handler(req, res) {
 
       return res.status(200).json({ rideRequests });
     }
-
     if (req.method === 'PUT') {
       const { rideRequestId, action } = req.body; // action: 'ACCEPT' ou 'REJECT'
       
@@ -177,14 +168,12 @@ export default async function handler(req, res) {
       if (!rideRequest) {
         return res.status(404).json({ error: 'Demande non trouvée' });
       }
-
       // Vérifier les permissions selon l'action
       if (action === 'CANCEL') {
         // Seul le passager peut annuler sa propre demande
         if (rideRequest.passengerId !== user.id) {
           return res.status(403).json({ error: 'Non autorisé - vous ne pouvez annuler que vos propres demandes' });
         }
-        
         // On ne peut annuler que les demandes en attente
         if (rideRequest.status !== 'PENDING') {
           return res.status(400).json({ error: 'Vous ne pouvez annuler que les demandes en attente' });
@@ -195,7 +184,6 @@ export default async function handler(req, res) {
           return res.status(403).json({ error: 'Non autorisé' });
         }
       }
-
       if (action === 'ACCEPT') {
         // Vérifier qu'il y a encore des places disponibles
         const ride = await prisma.ride.findUnique({
@@ -206,7 +194,6 @@ export default async function handler(req, res) {
         if (availableSpaces < rideRequest.requestedSeats) {
           return res.status(400).json({ error: 'Plus assez de places disponibles' });
         }
-
         // Accepter la demande
         const updatedRequest = await prisma.rideRequest.update({
           where: { id: rideRequestId },
@@ -300,7 +287,6 @@ export default async function handler(req, res) {
             }
           });
         }
-
         return res.status(200).json({ 
           success: true, 
           rideRequest: updatedRequest,
@@ -379,7 +365,6 @@ export default async function handler(req, res) {
         });
       }
     }
-
     return res.status(405).json({ error: 'Méthode non autorisée' });
 
   } catch (error) {
@@ -388,4 +373,4 @@ export default async function handler(req, res) {
   } finally {
     await prisma.$disconnect();
   }
-} 
+}

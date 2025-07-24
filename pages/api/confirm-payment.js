@@ -8,17 +8,18 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || '', {
 });
 
 export default async function handler(req, res) {
-  if (req.method !== 'POST') {
+  try {
+    // Ensure database connection is established
+    await ensureConnected();
+    if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
-
   try {
     const { paymentIntentId, orderData } = req.body;
 
     if (!paymentIntentId || !orderData) {
       return res.status(400).json({ error: 'Missing payment intent ID or order data' });
     }
-
     // Retrieve the payment intent from Stripe to verify its status
     const paymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId);
 
@@ -28,7 +29,6 @@ export default async function handler(req, res) {
         status: paymentIntent.status 
       });
     }
-
     // Extract user ID from token if available
     let customerId = null;
     const token = req.cookies.auth_token || req.headers.authorization?.replace('Bearer ', '');
@@ -40,7 +40,6 @@ export default async function handler(req, res) {
         // Token invalid or expired, continue as guest
       }
     }
-
     // Create the order in the database
     const order = await prisma.order.create({
       data: {
@@ -103,8 +102,6 @@ export default async function handler(req, res) {
         }
       });
     }
-
-    
     // Create notification for customer
     if (customerId) {
       await prisma.notification.create({
@@ -121,7 +118,6 @@ export default async function handler(req, res) {
         }
       });
     }
-
     await prisma.notification.create({
       data: {
         userId: orderData.merchantId,
@@ -162,4 +158,4 @@ export default async function handler(req, res) {
     // Using shared prisma instance, no need to disconnect
     await prisma.$disconnect();
   }
-} 
+}

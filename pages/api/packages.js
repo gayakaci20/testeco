@@ -1,4 +1,4 @@
-import { prisma } from '../../src/lib/prisma';
+import prisma, { ensureConnected } from '../../lib/prisma';
 import { calculateFullPackagePrice, calculatePackageSize } from '../../lib/priceCalculator';
 
 export default async function handler(req, res) {
@@ -7,6 +7,8 @@ export default async function handler(req, res) {
     
     if (req.method === 'GET') {
       try {
+        // Ensure database connection is established
+        await ensureConnected();  
         console.log('Fetching packages');
         const { status, available } = req.query;
         const userId = req.headers['x-user-id'];
@@ -68,6 +70,8 @@ export default async function handler(req, res) {
       }
     } else if (req.method === 'POST') {
       try {
+        // Ensure database connection is established
+        await ensureConnected();
         const data = req.body;
         console.log('Received package data:', JSON.stringify(data, null, 2));
         
@@ -203,4 +207,4 @@ export default async function handler(req, res) {
       details: topLevelError.message 
     });
   }
-} 
+}

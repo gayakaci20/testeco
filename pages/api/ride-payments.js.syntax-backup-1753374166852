@@ -1,0 +1,248 @@
+import { PrismaClient } from '@prisma/client';
+import { verifyToken } from '../../lib/auth';
+import Stripe from 'stripe';
+
+const prisma = new PrismaClient();
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || '', {
+  apiVersion: '2024-04-10'
+});
+
+export default async function handler(req, res) {
+  try {
+    // Ensure database connection is established
+    await ensureConnected();
+    // Vérifier l'authentification avec le système JWT existant
+    const token = req.cookies.token || req.cookies.auth_token;
+    if (!token) {
+      return res.status(401).json({ error: 'Token manquant' });
+    }
+
+    const user = await verifyToken(token);
+    if (!user) {
+      return res.status(401).json({ error: 'Token invalide' });
+    }
+
+    if (req.method === 'POST') {
+      const { 
+        rideRequestId, 
+        paymentData 
+      } = req.body;
+
+      if (!rideRequestId) {
+        return res.status(400).json({ error: 'rideRequestId est requis' });
+      }
+
+      // Vérifier que la ride request existe et appartient à l'utilisateur
+      const rideRequest = await prisma.rideRequest.findUnique({
+        where: { id: rideRequestId },
+        include: {
+          passenger: true,
+          carrier: true,
+          ride: true
+        }
+      });
+
+      if (!rideRequest) {
+        return res.status(404).json({ error: 'Demande de trajet non trouvée' });
+      }
+
+      // Vérifier que l'utilisateur est bien le passager
+      if (rideRequest.passengerId !== user.id) {
+        return res.status(403).json({ error: 'Non autorisé - vous ne pouvez payer que vos propres trajets' });
+      }
+
+      // Vérifier que la demande est acceptée
+      if (rideRequest.status !== 'ACCEPTED') {
+        return res.status(400).json({ error: 'Cette demande de trajet n\'est pas acceptée' });
+      }
+
+      // Vérifier qu'il n'y a pas déjà un paiement
+      const existingPayment = await prisma.payment.findFirst({
+        where: {
+          rideRequestId: rideRequestId,
+          status: 'COMPLETED'
+        }
+      });
+
+      if (existingPayment) {
+        return res.status(400).json({ error: 'Ce trajet est déjà payé' });
+      }
+
+      const amount = parseFloat(rideRequest.price) || 0;
+      if (amount <= 0) {
+        return res.status(400).json({ error: 'Prix invalide' });
+      }
+
+      let paymentStatus = 'PENDING';
+      let transactionId = null;
+      let stripePaymentIntentId = null;
+
+      // Traitement du paiement par carte
+      if (paymentData && paymentData.paymentMethod === 'CARD') {
+        try {
+          const { cardNumber, expiryDate, cvv, cardholderName, billingAddress, stripeToken } = paymentData;
+
+          let tokenId = stripeToken;
+
+          // Si pas de token fourni, créer un token à partir des données de carte
+          if (!tokenId) {
+            if (!cardNumber || !expiryDate || !cvv) {
+              return res.status(400).json({ error: 'Informations de carte incomplètes' });
+            }
+
+            // Créer un token Stripe
+            const [exp_month, exp_year] = expiryDate.split('/');
+            const token = await stripe.tokens.create({
+              card: {
+                number: cardNumber.replace(/\s/g, ''),
+                exp_month: parseInt(exp_month),
+                exp_year: parseInt(`20${exp_year}`),
+                cvc: cvv,
+                name: cardholderName,
+                address_line1: billingAddress?.street,
+                address_city: billingAddress?.city,
+                address_zip: billingAddress?.postalCode,
+                address_country: billingAddress?.country || 'FR',
+              },
+            });
+            tokenId = token.id;
+          }
+
+          // Créer le paiement avec le token
+          const charge = await stripe.charges.create({
+            amount: Math.round(amount * 100), // En centimes
+            currency: 'eur',
+            source: tokenId,
+            description: `Course ${rideRequest.ride.origin} → ${rideRequest.ride.destination} - ${rideRequest.requestedSeats} place(s)`,
+            metadata: {
+              rideRequestId: rideRequestId,
+              passengerId: user.id,
+              carrierId: rideRequest.carrierId,
+              rideId: rideRequest.rideId
+            },
+          });
+
+          paymentStatus = charge.status === 'succeeded' ? 'COMPLETED' : 'FAILED';
+          transactionId = charge.id;
+          stripePaymentIntentId = charge.payment_intent;
+
+        } catch (stripeError) {
+          console.error('Stripe payment error:', stripeError);
+          paymentStatus = 'FAILED';
+          return res.status(400).json({ 
+            error: 'Paiement échoué', 
+            details: stripeError.message 
+          });
+        }
+      }
+
+      // Créer le paiement dans la base de données
+      const payment = await prisma.payment.create({
+        data: {
+          userId: user.id,
+          rideRequestId: rideRequestId,
+          amount: amount,
+          currency: 'EUR',
+          status: paymentStatus,
+          paymentMethod: paymentData?.paymentMethod || 'CARD',
+          transactionId: transactionId,
+          paymentIntentId: stripePaymentIntentId,
+          completedAt: paymentStatus === 'COMPLETED' ? new Date() : null
+        }
+      });
+
+      // Si le paiement est réussi, mettre à jour le statut de la ride request
+      if (paymentStatus === 'COMPLETED') {
+        await prisma.rideRequest.update({
+          where: { id: rideRequestId },
+          data: { 
+            status: 'PAID'
+          }
+        });
+
+        // Créer une notification pour le transporteur
+        await prisma.notification.create({
+          data: {
+            userId: rideRequest.carrierId,
+            type: 'PAYMENT_SUCCESS',
+            title: 'Paiement reçu pour votre course !',
+            message: `${rideRequest.passenger.firstName} a payé ${amount}€ pour la course ${rideRequest.ride.origin} → ${rideRequest.ride.destination}. Le trajet est confirmé !`,
+            data: {
+              rideRequestId: rideRequestId,
+              paymentId: payment.id,
+              amount: amount
+            },
+            isRead: false,
+            relatedEntityId: rideRequestId
+          }
+        });
+
+        // Créer une notification pour le passager
+        await prisma.notification.create({
+          data: {
+            userId: user.id,
+            type: 'PAYMENT_SUCCESS',
+            title: 'Paiement effectué avec succès',
+            message: `Votre paiement de ${amount}€ pour la course ${rideRequest.ride.origin} → ${rideRequest.ride.destination} a été effectué. Bon voyage !`,
+            data: {
+              rideRequestId: rideRequestId,
+              paymentId: payment.id,
+              amount: amount
+            },
+            isRead: false,
+            relatedEntityId: rideRequestId
+          }
+        });
+      }
+
+      return res.status(201).json({
+        success: true,
+        payment,
+        rideRequest: {
+          ...rideRequest,
+          status: paymentStatus === 'COMPLETED' ? 'PAID' : rideRequest.status
+        },
+        message: paymentStatus === 'COMPLETED' 
+          ? 'Paiement effectué avec succès' 
+          : 'Paiement créé mais en cours de traitement'
+      });
+
+    } else if (req.method === 'GET') {
+      // Récupérer les paiements de l'utilisateur pour les ride requests
+      const payments = await prisma.payment.findMany({
+        where: {
+          userId: user.id,
+          rideRequestId: { not: null }
+        },
+        include: {
+          rideRequest: {
+            include: {
+              ride: true,
+              carrier: {
+                select: {
+                  firstName: true,
+                  lastName: true,
+                  email: true
+                }
+              }
+            }
+          }
+        },
+        orderBy: {
+          createdAt: 'desc'
+        }
+      });
+
+      return res.status(200).json({ payments });
+
+    } else {
+      return res.status(405).json({ error: 'Méthode non autorisée' });
+    }
+
+  } catch (error) {
+    console.error('Erreur dans /api/ride-payments:', error);
+    return res.status(500).json({ error: 'Erreur serveur' });
+  } finally {
+    await prisma.$disconnect();
+  }
+} 

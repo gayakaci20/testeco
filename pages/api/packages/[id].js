@@ -1,7 +1,10 @@
 import { prisma } from '../../../src/lib/prisma';
 
 export default async function handler(req, res) {
-  const { id } = req.query;
+  try {
+    // Ensure database connection is established
+    await ensureConnected();
+    const { id } = req.query;
   
   console.log(`Handling ${req.method} request to /api/packages/${id}`);
   
@@ -22,9 +25,8 @@ export default async function handler(req, res) {
       if (!packageData) {
         return res.status(404).json({ error: 'Package not found' });
       }
-      
       return res.status(200).json(packageData);
-    } 
+    }
     else if (req.method === 'DELETE') {
       // Check if package exists
       const existingPackage = await prisma.package.findUnique({
@@ -37,7 +39,6 @@ export default async function handler(req, res) {
       if (!existingPackage) {
         return res.status(404).json({ error: 'Package not found' });
       }
-
       // Delete the package and all related matches
       await prisma.$transaction([
         prisma.match.deleteMany({
@@ -60,4 +61,4 @@ export default async function handler(req, res) {
       details: error.message 
     });
   }
-} 
+}

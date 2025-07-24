@@ -3,10 +3,12 @@ import { PrismaClient } from "@prisma/client";
 const prisma = new PrismaClient();
 
 export default async function handler(req, res) {
-  if (req.method !== 'POST') {
+  try {
+    // Ensure database connection is established
+    await ensureConnected();
+    if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
-
   const { id: packageId } = req.query;
   const { rating, review } = req.body;
   const userId = req.headers['x-user-id'];
@@ -14,11 +16,9 @@ export default async function handler(req, res) {
   if (!userId) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
-
   if (!rating || rating < 1 || rating > 5) {
     return res.status(400).json({ error: 'Rating must be between 1 and 5' });
   }
-
   try {
     // Vérifier que le package existe et appartient au customer
     const packageData = await prisma.package.findUnique({
@@ -43,15 +43,12 @@ export default async function handler(req, res) {
     if (!packageData) {
       return res.status(404).json({ error: 'Package not found' });
     }
-
     if (packageData.userId !== userId) {
       return res.status(403).json({ error: 'Not authorized to rate this delivery' });
     }
-
     if (packageData.status !== 'DELIVERED') {
       return res.status(400).json({ error: 'Package must be delivered before rating' });
     }
-
     // Trouver le match complété pour cette livraison
     const completedMatch = packageData.matches.find(match => 
       match.status === 'COMPLETED' && match.ride?.user
@@ -60,12 +57,10 @@ export default async function handler(req, res) {
     if (!completedMatch) {
       return res.status(400).json({ error: 'No completed delivery found for this package' });
     }
-
     // Vérifier qu'il n'y a pas déjà une évaluation
     if (completedMatch.carrierReview) {
       return res.status(400).json({ error: 'Carrier already rated for this delivery' });
     }
-
     const carrierId = completedMatch.ride.user.id;
 
     // Créer l'évaluation
@@ -128,4 +123,5 @@ export default async function handler(req, res) {
     console.error('Error rating carrier:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
-} 
+}
+}

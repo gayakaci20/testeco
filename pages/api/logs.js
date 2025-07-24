@@ -1,6 +1,6 @@
 import { readLogs, cleanOldLogs, createApiLogger } from '../../lib/logger.ts';
 import { verifyToken } from '../../lib/auth';
-import { prisma } from '../../src/lib/prisma';
+import prisma, { ensureConnected } from '../../lib/prisma';
 import fs from 'fs';
 import path from 'path';
 
@@ -14,14 +14,12 @@ function deleteAllLogs() {
   } catch (error) {
     console.error('Erreur lors de la création du logger:', error);
   }
-  
   try {
     if (!fs.existsSync(LOG_DIR)) {
       const result = { success: true, message: 'Aucun répertoire de logs trouvé', deletedCount: 0 };
       if (logger) logger.info('Aucun répertoire de logs trouvé');
       return result;
     }
-    
     const files = fs.readdirSync(LOG_DIR);
     let deletedCount = 0;
     
@@ -57,7 +55,6 @@ function deleteAllLogs() {
     };
   }
 }
-
 // Fonction pour collecter les logs réels depuis différentes sources
 async function collectRealLogs(level, limit) {
   let logger;
@@ -67,7 +64,6 @@ async function collectRealLogs(level, limit) {
   } catch (error) {
     console.error('Erreur lors de la création du logger:', error);
   }
-  
   const realLogs = [];
   
   try {
@@ -80,7 +76,6 @@ async function collectRealLogs(level, limit) {
     } catch (error) {
       console.error('Erreur lors de la lecture des logs de fichier:', error);
     }
-    
     // 2. Logs depuis la base de données - avec gestion d'erreur robuste
     if (level === 'info' || level === 'debug') {
       try {
@@ -122,7 +117,6 @@ async function collectRealLogs(level, limit) {
         if (logger) logger.error('Erreur lors de la récupération des logs utilisateurs', { error: error.message });
       }
     }
-    
     // 3. Logs depuis les packages récents - avec gestion d'erreur
     if (level === 'info' || level === 'debug') {
       try {
@@ -171,7 +165,6 @@ async function collectRealLogs(level, limit) {
         if (logger) logger.error('Erreur lors de la récupération des logs packages', { error: error.message });
       }
     }
-    
     // 4. Logs depuis les matches récents - avec gestion d'erreur
     if (level === 'info' || level === 'debug') {
       try {
@@ -219,7 +212,6 @@ async function collectRealLogs(level, limit) {
         if (logger) logger.error('Erreur lors de la récupération des logs matches', { error: error.message });
       }
     }
-    
     // 5. Logs d'erreur depuis les paiements - avec gestion d'erreur
     if (level === 'error' || level === 'warn') {
       try {
@@ -276,7 +268,6 @@ async function collectRealLogs(level, limit) {
         if (logger) logger.error('Erreur lors de la récupération des logs paiements', { error: error.message });
       }
     }
-    
     // 6. Logs depuis les services récents - avec gestion d'erreur
     if (level === 'info' || level === 'debug') {
       try {
@@ -325,14 +316,12 @@ async function collectRealLogs(level, limit) {
         if (logger) logger.error('Erreur lors de la récupération des logs services', { error: error.message });
       }
     }
-    
     // Trier tous les logs par timestamp (plus récent en premier)
     try {
       realLogs.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
     } catch (error) {
       console.error('Erreur lors du tri des logs:', error);
     }
-    
     // Limiter au nombre demandé
     const limitedLogs = realLogs.slice(0, limit);
     
@@ -352,16 +341,17 @@ async function collectRealLogs(level, limit) {
     }
   }
 }
-
 export default async function handler(req, res) {
-  let logger;
+  try {
+    // Ensure database connection is established
+    await ensureConnected();
+    let logger;
   
   try {
     logger = createApiLogger('LOGS_API');
   } catch (error) {
     console.error('Erreur lors de la création du logger:', error);
   }
-  
   try {
     // Vérifier l'authentification (optionnel)
     const token = req.cookies.auth_token;
@@ -381,7 +371,6 @@ export default async function handler(req, res) {
         });
       }
     }
-
     // Gérer les différentes méthodes HTTP
     if (req.method === 'GET') {
       const { level = 'info', limit = '100', clean = 'false', delete: deleteParam = 'false' } = req.query;
@@ -396,7 +385,6 @@ export default async function handler(req, res) {
           deletedCount: deleteResult.deletedCount || 0
         });
       }
-      
       // Nettoyer les anciens logs si demandé
       if (clean === 'true') {
         try {
@@ -405,7 +393,6 @@ export default async function handler(req, res) {
           console.error('Erreur lors du nettoyage des logs:', error);
         }
       }
-      
       // Collecter les logs réels depuis différentes sources
       const logs = await collectRealLogs(level, parseInt(limit));
       
@@ -418,7 +405,7 @@ export default async function handler(req, res) {
         logs: logs || [],
         sources: ['files', 'database', 'user_activity', 'packages', 'matches', 'payments', 'services']
       });
-    } 
+    }
     else if (req.method === 'DELETE') {
       // Supprimer tous les logs
       const deleteResult = deleteAllLogs();
@@ -446,4 +433,4 @@ export default async function handler(req, res) {
       message: 'Erreur interne du serveur'
     });
   }
-} 
+}

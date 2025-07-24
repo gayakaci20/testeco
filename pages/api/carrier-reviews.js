@@ -3,10 +3,12 @@ import { PrismaClient } from "@prisma/client";
 const prisma = new PrismaClient();
 
 export default async function handler(req, res) {
-  if (req.method !== 'GET') {
+  try {
+    // Ensure database connection is established
+    await ensureConnected();
+    if (req.method !== 'GET') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
-
   const { carrierId } = req.query;
 
   try {
@@ -62,7 +64,6 @@ export default async function handler(req, res) {
         }
       });
     }
-
     // Sinon, récupérer toutes les évaluations récentes
     const allReviews = await prisma.carrierReview.findMany({
       include: {
@@ -104,4 +105,4 @@ export default async function handler(req, res) {
     console.error('Error fetching carrier reviews:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
-} 
+}

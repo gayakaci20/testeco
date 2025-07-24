@@ -1,0 +1,116 @@
+// This is a login endpoint using Prisma for authentication
+import { generateToken } from '../../../lib/auth';
+import { COOKIE_MAX_AGE } from '../../../lib/auth-constants';
+import { prisma } from '../../../lib/prisma';
+import bcrypt from 'bcryptjs';
+
+export default async function handler(req, res) {
+  try {
+    // Ensure database connection is established
+    await ensureConnected();
+
+  // Assurer que la réponse est toujours du JSON
+  res.setHeader('Content-Type', 'application/json');
+  
+  // Add CORS headers to prevent host validation issues
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  
+  if (req.method === 'OPTIONS') {
+    return res.status(200).end();
+  }
+  if (req.method !== 'POST') {
+    return res.status(405).json({ message: 'Method not allowed' });
+  }
+  try {
+    // Get credentials from request body
+    const { email, password } = req.body;
+    console.log(`🔐 Login attempt for email: ${email}`);
+    console.log('🌐 Request headers:', {
+      host: req.headers.host,
+      origin: req.headers.origin,
+      'user-agent': req.headers['user-agent']?.substring(0, 50) + '...'
+    });
+
+    // Simple validation
+    if (!email || !password) {
+      console.log('❌ Missing email or password');
+      return res.status(400).json({ message: 'Email and password are required' });
+    }
+    // For development testing, accept any valid email format with any password
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      console.log('❌ Invalid email format:', email);
+      return res.status(400).json({ message: 'Invalid email format' });
+    }
+    // Check if user exists in database
+    let user;
+    
+    try {
+      console.log('🔍 Querying database for user...');
+      // Query users table with Prisma
+      user = await prisma.user.findUnique({
+        where: { email: email }
+      });
+      
+      if (!user) {
+        console.log('❌ User not found:', email);
+        return res.status(400).json({ message: 'Invalid email or password' });
+      }
+      console.log('✅ User found:', user.id);
+    } catch (dbError) {
+      console.error('❌ Database error during login:', dbError);
+      return res.status(500).json({ message: 'Database connection error' });
+    }
+    // Validate password
+    console.log('🔐 Validating password...');
+    const isPasswordValid = await bcrypt.compare(password, user.password);
+    
+    if (!isPasswordValid) {
+      console.log('❌ Invalid password for user:', email);
+      return res.status(400).json({ message: 'Invalid email or password' });
+    }
+    console.log('✅ Password validated');
+
+    // Generate JWT token
+    console.log('🎫 Generating JWT token...');
+    const token = await generateToken(user);
+
+    // Set HTTP-only cookie with the token - using multiple formats for compatibility
+    const cookieOptions = `Max-Age=${COOKIE_MAX_AGE}; Path=/; HttpOnly; SameSite=Strict; Secure=${process.env.NODE_ENV === 'production'}`;
+    
+    res.setHeader('Set-Cookie', [
+      `token=${token}; ${cookieOptions}`,
+      `auth_token=${token}; ${cookieOptions}`
+    ]);
+
+    console.log('🍪 Cookies set successfully');
+
+    // Return user info (without password)
+    const { password: _, ...userWithoutPassword } = user;
+
+    console.log('✅ Login successful for:', email);
+
+    return res.status(200).json({
+      message: 'Login successful',
+      user: userWithoutPassword,
+      token: token
+    });
+
+  } catch (error) {
+    console.error('❌ Login error:', {
+      message: error.message,
+      stack: error.stack,
+      code: error.code
+    });
+    return res.status(500).json({ 
+      message: 'Internal server error',
+      error: process.env.NODE_ENV === 'development' ? error.message : 'Une erreur interne est survenue'
+    });
+  }
+  } catch (error) {
+    console.error('API error:', error);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+}

@@ -7,10 +7,12 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || '', {
 });
 
 export default async function handler(req, res) {
-  if (req.method !== 'POST') {
+  try {
+    // Ensure database connection is established
+    await ensureConnected();
+    if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
-
   try {
     const {
       merchantId,
@@ -33,11 +35,9 @@ export default async function handler(req, res) {
         // Token invalid or expired, continue as guest
       }
     }
-
     if (!merchantId || !customerInfo || !items || items.length === 0) {
       return res.status(400).json({ error: 'Missing required fields' });
     }
-
     // Verify merchant exists
     const merchant = await prisma.user.findFirst({
       where: { id: merchantId, role: 'MERCHANT' }
@@ -46,7 +46,6 @@ export default async function handler(req, res) {
     if (!merchant) {
       return res.status(404).json({ error: 'Merchant not found' });
     }
-
     // Verify products exist and calculate total
     let calculatedSubtotal = 0;
     const verifiedItems = [];
@@ -63,11 +62,9 @@ export default async function handler(req, res) {
       if (!product) {
         return res.status(400).json({ error: `Product ${item.productName} not found` });
       }
-
       if (product.stock < item.quantity) {
         return res.status(400).json({ error: `Insufficient stock for ${product.name}` });
       }
-
       const itemTotal = product.price * item.quantity;
       calculatedSubtotal += itemTotal;
 
@@ -79,7 +76,6 @@ export default async function handler(req, res) {
         totalPrice: itemTotal
       });
     }
-
     const calculatedDeliveryFee = delivery?.wantsDelivery ? (deliveryFee || 5.99) : 0;
     const calculatedTotal = calculatedSubtotal + calculatedDeliveryFee;
 
@@ -117,7 +113,6 @@ export default async function handler(req, res) {
         },
       };
     }
-
     const paymentIntent = await stripe.paymentIntents.create(paymentIntentData);
 
     // Store order data temporarily (you might want to use Redis or a temporary table)
@@ -151,4 +146,4 @@ export default async function handler(req, res) {
   } finally {
     // Using shared prisma instance, no need to disconnect
   }
-} 
+}

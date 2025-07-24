@@ -1,0 +1,338 @@
+import prisma, { ensureConnected } from '../../lib/prisma';
+import { verifyToken } from '../../lib/auth';
+
+export default async function handler(req, res) {
+  try {
+    // Ensure database connection is established
+    await ensureConnected();
+    // Authentification
+    const token = req.cookies.auth_token;
+    if (!token) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+    const decoded = await verifyToken(token);
+    if (!decoded) {
+      return res.status(401).json({ error: 'Invalid token' });
+    }
+    const userId = decoded.id;
+
+    if (req.method === 'GET') {
+      try {
+        const { rideId, status } = req.query;
+        
+        // Build where clause
+        const where = {};
+        
+        if (rideId) {
+          where.rideId = rideId;
+        }
+        if (status) {
+          where.status = status;
+        }
+        // Get user to check role
+        const user = await prisma.user.findUnique({
+          where: { id: userId }
+        });
+
+        if (!user) {
+          return res.status(404).json({ error: 'User not found' });
+        }
+        // If user is a carrier, show proposals for their rides
+        if (user.role === 'CARRIER') {
+          where.ride = {
+            userId: userId
+          };
+        } else {
+          // If user is a customer, show their proposals
+          where.userId = userId;
+        }
+        // Pour l'instant, utilisons les matches comme propositions
+        const proposals = await prisma.match.findMany({
+          where,
+          include: {
+            user: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                email: true,
+                phoneNumber: true
+              }
+            },
+            ride: {
+              select: {
+                id: true,
+                origin: true,
+                destination: true,
+                departureTime: true,
+                pricePerKg: true,
+                vehicleType: true,
+                user: {
+                  select: {
+                    id: true,
+                    firstName: true,
+                    lastName: true,
+                    email: true,
+                    phoneNumber: true
+                  }
+                }
+              }
+            }
+          },
+          orderBy: {
+            createdAt: 'desc'
+          }
+        });
+
+        return res.status(200).json(proposals);
+      } catch (error) {
+        console.error('Error fetching ride proposals:', error);
+        return res.status(500).json({ error: 'Failed to fetch ride proposals' });
+      }
+    }
+    if (req.method === 'POST') {
+      try {
+        const {
+          rideId,
+          message,
+          proposedPrice,
+          pickupLocation,
+          dropoffLocation,
+          packageDescription,
+          packageWeight,
+          packageSize,
+          isUrgent,
+          isFragile,
+          preferredPickupTime,
+          notes
+        } = req.body;
+
+        // Validate required fields
+        if (!rideId || !message) {
+          return res.status(400).json({ error: 'rideId and message are required' });
+        }
+        // Verify the ride exists
+        const ride = await prisma.ride.findUnique({
+          where: { id: rideId },
+          include: {
+            user: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                email: true
+              }
+            }
+          }
+        });
+
+        if (!ride) {
+          return res.status(404).json({ error: 'Ride not found' });
+        }
+        // Check if user already has a pending proposal for this ride
+        const existingProposal = await prisma.rideProposal.findFirst({
+          where: {
+            rideId: rideId,
+            userId: userId,
+            status: 'PENDING'
+          }
+        });
+
+        if (existingProposal) {
+          return res.status(400).json({ error: 'You already have a pending proposal for this ride' });
+        }
+        // Create the ride proposal
+        const proposal = await prisma.rideProposal.create({
+          data: {
+            rideId,
+            userId,
+            message,
+            proposedPrice: proposedPrice ? parseFloat(proposedPrice) : null,
+            pickupLocation,
+            dropoffLocation,
+            packageDescription,
+            packageWeight: packageWeight ? parseFloat(packageWeight) : null,
+            packageSize,
+            isUrgent: isUrgent || false,
+            isFragile: isFragile || false,
+            preferredPickupTime: preferredPickupTime ? new Date(preferredPickupTime) : null,
+            notes,
+            status: 'PENDING'
+          },
+          include: {
+            user: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                email: true,
+                phoneNumber: true
+              }
+            },
+            ride: {
+              select: {
+                id: true,
+                origin: true,
+                destination: true,
+                departureTime: true,
+                pricePerKg: true,
+                vehicleType: true,
+                user: {
+                  select: {
+                    id: true,
+                    firstName: true,
+                    lastName: true,
+                    email: true
+                  }
+                }
+              }
+            }
+          }
+        });
+
+        // Create notification for the ride owner (carrier)
+        await prisma.notification.create({
+          data: {
+            userId: ride.userId,
+            type: 'RIDE_UPDATE',
+            title: 'Nouvelle proposition de trajet',
+            message: `${proposal.user.firstName} ${proposal.user.lastName} a fait une proposition pour votre trajet ${ride.origin} → ${ride.destination}`,
+            isRead: false,
+            relatedEntityId: proposal.id
+          }
+        });
+
+        return res.status(201).json(proposal);
+      } catch (error) {
+        console.error('Error creating ride proposal:', error);
+        return res.status(500).json({ error: 'Failed to create ride proposal' });
+      }
+    }
+    if (req.method === 'PUT') {
+      try {
+        const { id, status, response } = req.body;
+
+        if (!id || !status) {
+          return res.status(400).json({ error: 'id and status are required' });
+        }
+        // Verify the proposal exists
+        const proposal = await prisma.rideProposal.findUnique({
+          where: { id },
+          include: {
+            ride: {
+              select: {
+                userId: true,
+                origin: true,
+                destination: true
+              }
+            },
+            user: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                email: true
+              }
+            }
+          }
+        });
+
+        if (!proposal) {
+          return res.status(404).json({ error: 'Proposal not found' });
+        }
+        // Check if user is the ride owner
+        if (proposal.ride.userId !== userId) {
+          return res.status(403).json({ error: 'Not authorized to update this proposal' });
+        }
+        // Update the proposal
+        const updatedProposal = await prisma.rideProposal.update({
+          where: { id },
+          data: {
+            status,
+            response: response || null,
+            respondedAt: new Date()
+          },
+          include: {
+            user: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                email: true,
+                phoneNumber: true
+              }
+            },
+            ride: {
+              select: {
+                id: true,
+                origin: true,
+                destination: true,
+                departureTime: true,
+                pricePerKg: true,
+                vehicleType: true,
+                user: {
+                  select: {
+                    id: true,
+                    firstName: true,
+                    lastName: true,
+                    email: true
+                  }
+                }
+              }
+            }
+          }
+        });
+
+        // Create notification for the proposal sender
+        const notificationTitle = status === 'ACCEPTED' ? 'Proposition acceptée' : 'Proposition refusée';
+        const notificationMessage = status === 'ACCEPTED' 
+          ? `Votre proposition pour le trajet ${proposal.ride.origin} → ${proposal.ride.destination} a été acceptée!`
+          : `Votre proposition pour le trajet ${proposal.ride.origin} → ${proposal.ride.destination} a été refusée.`;
+
+        await prisma.notification.create({
+          data: {
+            userId: proposal.user.id,
+            type: 'RIDE_UPDATE',
+            title: notificationTitle,
+            message: notificationMessage,
+            isRead: false,
+            relatedEntityId: proposal.id
+          }
+        });
+
+        // If accepted, create a match
+        if (status === 'ACCEPTED') {
+          const newMatch = await prisma.match.create({
+            data: {
+              packageId: proposal.packageId || null, // If there's a package
+              rideId: proposal.rideId,
+              status: 'PENDING',
+              price: proposal.proposedPrice,
+              notes: proposal.notes
+            }
+          });
+
+          // Create payment notification for the client
+          await prisma.notification.create({
+            data: {
+              userId: proposal.user.id,
+              type: 'PAYMENT_REQUIRED',
+              title: 'Paiement requis',
+              message: `Votre proposition pour le trajet ${proposal.ride.origin} → ${proposal.ride.destination} a été acceptée ! Veuillez procéder au paiement pour confirmer votre réservation.`,
+              isRead: false,
+              relatedEntityId: newMatch.id
+            }
+          });
+        }
+        return res.status(200).json(updatedProposal);
+      } catch (error) {
+        console.error('Error updating ride proposal:', error);
+        return res.status(500).json({ error: 'Failed to update ride proposal' });
+      }
+    }
+    return res.status(405).json({ error: 'Method not allowed' });
+  } catch (error) {
+    console.error('Top-level error in ride-proposals API:', error);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+}

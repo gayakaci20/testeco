@@ -1,0 +1,153 @@
+import prisma, { ensureConnected } from '../../lib/prisma';
+import Stripe from 'stripe';
+
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || '', {
+  apiVersion: '2024-04-10'
+});
+
+export default async function handler(req, res) {
+  try {
+    // Ensure database connection is established
+    await ensureConnected();
+    // Set CORS headers
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-user-id');
+
+  if (req.method === 'OPTIONS') {
+    return res.status(200).end();
+  }
+
+  const userId = req.headers['x-user-id'];
+  if (!userId) {
+    return res.status(401).json({ error: 'Unauthorized - User ID required' });
+  }
+
+  if (req.method === 'POST') {
+    try {
+      const { packageId, paymentData } = req.body;
+
+      if (!packageId) {
+        return res.status(400).json({ error: 'Package ID is required' });
+      }
+
+      // Fetch the package to get details
+      const packageInfo = await prisma.package.findUnique({
+        where: { id: packageId },
+        include: {
+          user: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              email: true
+            }
+          }
+        }
+      });
+
+      if (!packageInfo) {
+        return res.status(404).json({ error: 'Package not found' });
+      }
+
+      // Verify the user owns this package
+      if (packageInfo.userId !== userId) {
+        return res.status(403).json({ error: 'You can only pay for your own packages' });
+      }
+
+      // Check if package already has a payment
+      const existingPayment = await prisma.payment.findFirst({
+        where: {
+          packageId: packageId,
+          status: 'COMPLETED'
+        }
+      });
+
+      if (existingPayment) {
+        return res.status(400).json({ error: 'Package is already paid for' });
+      }
+
+      if (!packageInfo.price || packageInfo.price <= 0) {
+        return res.status(400).json({ error: 'Package price is not set or invalid' });
+      }
+
+      // Create Stripe payment intent
+      const paymentIntent = await stripe.paymentIntents.create({
+        amount: Math.round(packageInfo.price * 100), // Convert to cents
+        currency: 'eur',
+        description: `EcoDeli Package Payment - ${packageInfo.title}`,
+        metadata: {
+          packageId: packageId,
+          userId: userId,
+          type: 'direct_package_payment'
+        }
+      });
+
+      // Simulate payment confirmation for demo purposes
+      // In production, you'd handle the actual card processing here
+      const paymentSuccessful = true;
+
+      if (paymentSuccessful) {
+        // Create payment record
+        const payment = await prisma.payment.create({
+          data: {
+            userId: userId,
+            packageId: packageId,
+            amount: packageInfo.price,
+            currency: 'EUR',
+            status: 'COMPLETED',
+            paymentMethod: paymentData.paymentMethod || 'CARD',
+            stripeTransactionId: paymentIntent.id,
+            metadata: {
+              cardLast4: paymentData.cardNumber ? paymentData.cardNumber.slice(-4) : null,
+              paymentType: 'direct_package',
+              billingAddress: paymentData.billingAddress
+            }
+          }
+        });
+
+        // Update package status to indicate it's paid and ready for carrier assignment
+        await prisma.package.update({
+          where: { id: packageId },
+          data: { 
+            status: 'PAID_AWAITING_CARRIER'
+          }
+        });
+
+        console.log('Direct package payment completed:', {
+          paymentId: payment.id,
+          packageId: packageId,
+          amount: packageInfo.price
+        });
+
+        return res.status(200).json({
+          success: true,
+          payment: {
+            id: payment.id,
+            amount: payment.amount,
+            status: payment.status
+          },
+          package: {
+            id: packageInfo.id,
+            title: packageInfo.title,
+            status: 'PAID_AWAITING_CARRIER'
+          },
+          message: 'Payment successful! Your package is now priority for carrier assignment.'
+        });
+
+      } else {
+        return res.status(400).json({ error: 'Payment failed' });
+      }
+
+    } catch (error) {
+      console.error('Package payment error:', error);
+      return res.status(500).json({ 
+        error: 'Payment processing failed',
+        details: error.message 
+      });
+    }
+  } else {
+    res.setHeader('Allow', ['POST']);
+    return res.status(405).json({ error: 'Method not allowed' });
+  }
+}

@@ -8,12 +8,10 @@ export default async function handler(req, res) {
     if (!token) {
       return res.status(401).json({ error: 'Unauthorized' });
     }
-
     const decoded = await verifyToken(token);
     if (!decoded) {
       return res.status(401).json({ error: 'Invalid token' });
     }
-
     const userId = decoded.id;
 
     if (req.method === 'GET') {
@@ -26,11 +24,9 @@ export default async function handler(req, res) {
         if (rideId) {
           where.rideId = rideId;
         }
-        
         if (status) {
           where.status = status;
         }
-
         // Get user to check role
         const user = await prisma.user.findUnique({
           where: { id: userId }
@@ -39,7 +35,6 @@ export default async function handler(req, res) {
         if (!user) {
           return res.status(404).json({ error: 'User not found' });
         }
-
         // If user is a carrier, show proposals for their rides
         if (user.role === 'CARRIER') {
           where.ride = {
@@ -49,7 +44,6 @@ export default async function handler(req, res) {
           // If user is a customer, show their proposals
           where.userId = userId;
         }
-
         // Pour l'instant, utilisons les matches comme propositions
         const proposals = await prisma.match.findMany({
           where,
@@ -94,7 +88,6 @@ export default async function handler(req, res) {
         return res.status(500).json({ error: 'Failed to fetch ride proposals' });
       }
     }
-
     if (req.method === 'POST') {
       try {
         const {
@@ -116,7 +109,6 @@ export default async function handler(req, res) {
         if (!rideId || !message) {
           return res.status(400).json({ error: 'rideId and message are required' });
         }
-
         // Verify the ride exists
         const ride = await prisma.ride.findUnique({
           where: { id: rideId },
@@ -135,7 +127,6 @@ export default async function handler(req, res) {
         if (!ride) {
           return res.status(404).json({ error: 'Ride not found' });
         }
-
         // Check if user already has a pending proposal for this ride
         const existingProposal = await prisma.rideProposal.findFirst({
           where: {
@@ -148,7 +139,6 @@ export default async function handler(req, res) {
         if (existingProposal) {
           return res.status(400).json({ error: 'You already have a pending proposal for this ride' });
         }
-
         // Create the ride proposal
         const proposal = await prisma.rideProposal.create({
           data: {
@@ -216,7 +206,6 @@ export default async function handler(req, res) {
         return res.status(500).json({ error: 'Failed to create ride proposal' });
       }
     }
-
     if (req.method === 'PUT') {
       try {
         const { id, status, response } = req.body;
@@ -224,7 +213,6 @@ export default async function handler(req, res) {
         if (!id || !status) {
           return res.status(400).json({ error: 'id and status are required' });
         }
-
         // Verify the proposal exists
         const proposal = await prisma.rideProposal.findUnique({
           where: { id },
@@ -250,12 +238,10 @@ export default async function handler(req, res) {
         if (!proposal) {
           return res.status(404).json({ error: 'Proposal not found' });
         }
-
         // Check if user is the ride owner
         if (proposal.ride.userId !== userId) {
           return res.status(403).json({ error: 'Not authorized to update this proposal' });
         }
-
         // Update the proposal
         const updatedProposal = await prisma.rideProposal.update({
           where: { id },
@@ -336,17 +322,15 @@ export default async function handler(req, res) {
             }
           });
         }
-
         return res.status(200).json(updatedProposal);
       } catch (error) {
         console.error('Error updating ride proposal:', error);
         return res.status(500).json({ error: 'Failed to update ride proposal' });
       }
     }
-
     return res.status(405).json({ error: 'Method not allowed' });
   } catch (error) {
     console.error('Top-level error in ride-proposals API:', error);
     return res.status(500).json({ error: 'Internal server error' });
   }
-} 
+}

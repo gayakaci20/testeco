@@ -1,4 +1,4 @@
-import { prisma } from '../../src/lib/prisma';
+import prisma, { ensureConnected } from '../../lib/prisma';
 import Stripe from 'stripe';
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || '', {
@@ -6,7 +6,10 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || '', {
 });
 
 export default async function handler(req, res) {
-  // Set CORS headers
+  try {
+    // Ensure database connection is established
+    await ensureConnected();
+    // Set CORS headers
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-user-id');
@@ -14,12 +17,10 @@ export default async function handler(req, res) {
   if (req.method === 'OPTIONS') {
     return res.status(200).end();
   }
-
   const userId = req.headers['x-user-id'];
   if (!userId) {
     return res.status(401).json({ error: 'Unauthorized - User ID required' });
   }
-
   if (req.method === 'POST') {
     try {
       const { packageId, paymentData } = req.body;
@@ -27,7 +28,6 @@ export default async function handler(req, res) {
       if (!packageId) {
         return res.status(400).json({ error: 'Package ID is required' });
       }
-
       // Fetch the package to get details
       const packageInfo = await prisma.package.findUnique({
         where: { id: packageId },
@@ -46,12 +46,10 @@ export default async function handler(req, res) {
       if (!packageInfo) {
         return res.status(404).json({ error: 'Package not found' });
       }
-
       // Verify the user owns this package
       if (packageInfo.userId !== userId) {
         return res.status(403).json({ error: 'You can only pay for your own packages' });
       }
-
       // Check if package already has a payment
       const existingPayment = await prisma.payment.findFirst({
         where: {
@@ -63,11 +61,9 @@ export default async function handler(req, res) {
       if (existingPayment) {
         return res.status(400).json({ error: 'Package is already paid for' });
       }
-
       if (!packageInfo.price || packageInfo.price <= 0) {
         return res.status(400).json({ error: 'Package price is not set or invalid' });
       }
-
       // Create Stripe payment intent
       const paymentIntent = await stripe.paymentIntents.create({
         amount: Math.round(packageInfo.price * 100), // Convert to cents
@@ -135,7 +131,6 @@ export default async function handler(req, res) {
       } else {
         return res.status(400).json({ error: 'Payment failed' });
       }
-
     } catch (error) {
       console.error('Package payment error:', error);
       return res.status(500).json({ 
@@ -147,4 +142,4 @@ export default async function handler(req, res) {
     res.setHeader('Allow', ['POST']);
     return res.status(405).json({ error: 'Method not allowed' });
   }
-} 
+}

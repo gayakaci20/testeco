@@ -15,15 +15,12 @@ export default async function handler(req, res) {
         if (status) {
           where.status = status;
         }
-        
         if (customerId) {
           where.customerId = customerId;
         }
-        
         if (carrierId) {
           where.carrierId = carrierId;
         }
-        
         const requests = await prisma.transportRequest.findMany({
           where,
           include: {
@@ -60,7 +57,6 @@ export default async function handler(req, res) {
         return res.status(500).json({ error: 'Failed to fetch transport requests', details: error.message });
       }
     }
-
     if (req.method === 'POST') {
       try {
         const data = req.body;
@@ -74,7 +70,6 @@ export default async function handler(req, res) {
             details: 'A valid customer ID must be provided'
           });
         }
-        
         console.log(`Looking up customer with ID: ${data.customerId}`);
         // Validate that the customer exists
         try {
@@ -89,7 +84,6 @@ export default async function handler(req, res) {
               details: `No customer found with ID: ${data.customerId}`
             });
           }
-          
           console.log(`Customer found: ${customerExists.email}`);
         } catch (customerLookupError) {
           console.error('Error looking up customer:', customerLookupError);
@@ -98,7 +92,6 @@ export default async function handler(req, res) {
             details: customerLookupError.message 
           });
         }
-
         // Generate a unique tracking number
         const trackingNumber = `TR-${Date.now()}-${Math.random().toString(36).substr(2, 8).toUpperCase()}`;
 
@@ -178,7 +171,6 @@ export default async function handler(req, res) {
             console.error('Error creating notifications:', notificationError);
             // Continue even if notifications fail
           }
-
           return res.status(201).json(newRequest);
         } catch (createError) {
           console.error('Transport request creation database error:', createError);
@@ -204,4 +196,4 @@ export default async function handler(req, res) {
       details: topLevelError.message 
     });
   }
-} 
+}

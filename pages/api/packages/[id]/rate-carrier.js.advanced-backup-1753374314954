@@ -1,0 +1,127 @@
+import { PrismaClient } from "@prisma/client";
+
+const prisma = new PrismaClient();
+
+export default async function handler(req, res) {
+  try {
+    // Ensure database connection is established
+    await ensureConnected();
+
+  if (req.method !== 'POST') {
+    return res.status(405).json({ error: 'Method not allowed' });
+  }
+  const { id: packageId } = req.query;
+  const { rating, review } = req.body;
+  const userId = req.headers['x-user-id'];
+
+  if (!userId) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  if (!rating || rating < 1 || rating > 5) {
+    return res.status(400).json({ error: 'Rating must be between 1 and 5' });
+  }
+  try {
+    // Vérifier que le package existe et appartient au customer
+    const packageData = await prisma.package.findUnique({
+      where: { id: packageId },
+      include: {
+        matches: {
+          where: { 
+            status: 'COMPLETED' 
+          },
+          include: {
+            ride: {
+              include: {
+                user: true
+              }
+            },
+            carrierReview: true
+          }
+        }
+      }
+    });
+
+    if (!packageData) {
+      return res.status(404).json({ error: 'Package not found' });
+    }
+    if (packageData.userId !== userId) {
+      return res.status(403).json({ error: 'Not authorized to rate this delivery' });
+    }
+    if (packageData.status !== 'DELIVERED') {
+      return res.status(400).json({ error: 'Package must be delivered before rating' });
+    }
+    // Trouver le match complété pour cette livraison
+    const completedMatch = packageData.matches.find(match => 
+      match.status === 'COMPLETED' && match.ride?.user
+    );
+
+    if (!completedMatch) {
+      return res.status(400).json({ error: 'No completed delivery found for this package' });
+    }
+    // Vérifier qu'il n'y a pas déjà une évaluation
+    if (completedMatch.carrierReview) {
+      return res.status(400).json({ error: 'Carrier already rated for this delivery' });
+    }
+    const carrierId = completedMatch.ride.user.id;
+
+    // Créer l'évaluation
+    const carrierReview = await prisma.carrierReview.create({
+      data: {
+        matchId: completedMatch.id,
+        customerId: userId,
+        carrierId: carrierId,
+        rating: parseInt(rating),
+        review: review || null
+      },
+      include: {
+        carrier: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            email: true
+          }
+        }
+      }
+    });
+
+    // Mettre à jour les statistiques moyennes du transporteur
+    const carrierRatings = await prisma.carrierReview.findMany({
+      where: { carrierId: carrierId },
+      select: { rating: true }
+    });
+
+    const totalRatings = carrierRatings.length;
+    const averageRating = carrierRatings.reduce((sum, review) => sum + review.rating, 0) / totalRatings;
+
+    // Mettre à jour les statistiques du transporteur (vous pouvez ajouter ces champs au modèle User si nécessaire)
+    await prisma.user.update({
+      where: { id: carrierId },
+      data: {
+        // rating: averageRating,
+        // totalRatings: totalRatings
+      }
+    });
+
+    // Créer une notification pour le transporteur
+    await prisma.notification.create({
+      data: {
+        userId: carrierId,
+        type: 'GENERAL',
+        title: 'Nouvelle évaluation reçue',
+        message: `Vous avez reçu une évaluation de ${rating} étoiles pour la livraison du colis "${packageData.description}".`,
+        relatedEntityId: packageId
+      }
+    });
+
+    res.status(200).json({
+      success: true,
+      review: carrierReview,
+      message: 'Évaluation enregistrée avec succès'
+    });
+
+  } catch (error) {
+    console.error('Error rating carrier:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+}

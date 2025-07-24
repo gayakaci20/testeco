@@ -56,7 +56,6 @@ export default async function handler(req, res) {
             details: 'A valid user ID must be provided'
           });
         }
-        
         console.log(`Looking up user with ID: ${data.userId}`);
         // Validate that the user exists
         try {
@@ -72,7 +71,6 @@ export default async function handler(req, res) {
               details: `No user found with ID: ${data.userId}`
             });
           }
-          
           console.log(`User found: ${userExists.email}`);
         } catch (userLookupError) {
           console.error('Error looking up user:', userLookupError);
@@ -81,7 +79,6 @@ export default async function handler(req, res) {
             details: userLookupError.message 
           });
         }
-
         // Prepare the data object with proper field mapping
         const rideData = {
           userId: data.userId || data.carrierId,
@@ -131,7 +128,6 @@ export default async function handler(req, res) {
       return res.status(405).json({ error: 'Method not allowed' });
     }
 }
-
 // 🚀 NOUVELLE FONCTION: Matching automatique des colis
 async function findAndCreateMatches(ride) {
   try {
@@ -249,7 +245,6 @@ async function findAndCreateMatches(ride) {
           if (!estimatedPrice) {
             estimatedPrice = 25.0; // Default price
           }
-
           // Create the match
           const match = await prisma.match.create({
             data: {
@@ -290,7 +285,6 @@ async function findAndCreateMatches(ride) {
         }
       }
     }
-
     console.log(`🎉 Automatic matching completed: ${matchesCreated} matches created for ride ${ride.id}`);
 
     // Create notification for the carrier about matches found
@@ -306,9 +300,8 @@ async function findAndCreateMatches(ride) {
         }
       });
     }
-
   } catch (error) {
     console.error('❌ Error in automatic matching:', error);
     // Don't throw error to avoid breaking ride creation
   }
-} 
+}

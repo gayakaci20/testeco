@@ -9,7 +9,8 @@
     "lint": "next lint",
     "studio": "prisma studio",
     "prisma:seed": "ts-node prisma/seed.ts",
-    "postinstall": "prisma generate"
+    "postinstall": "prisma generate",
+    "debug:auth": "node scripts/debug-auth.js"
   },
   "dependencies": {
     "@prisma/client": "^6.12.0",

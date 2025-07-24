@@ -1,0 +1,322 @@
+import prisma, { ensureConnected } from '../../lib/prisma';
+
+export default async function handler(req, res) {
+  try {
+    // Ensure database connection is established
+    await ensureConnected();
+
+  if (req.method === 'GET') {
+    try {
+      const { status, userId } = req.query;
+      
+      const where = {};
+      if (status) where.status = status;
+      if (userId) where.userId = userId;
+      
+      const rides = await prisma.ride.findMany({
+        where,
+        include: {
+          user: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              email: true,
+              role: true
+            }
+          },
+          matches: {
+            include: {
+              package: {
+                select: {
+                  id: true,
+                  description: true,
+                  status: true
+                }
+              }
+            }
+          }
+        },
+        orderBy: {
+          createdAt: 'desc'
+        }
+      });
+      
+      return res.status(200).json(rides);
+    } catch (error) {
+      console.error('Error fetching rides:', error);
+      return res.status(500).json({ error: 'Failed to fetch rides' });
+    }
+  } else if (req.method === 'POST') {
+      try {
+        const data = req.body;
+        console.log('Received ride data:', JSON.stringify(data, null, 2));
+        
+        // Validate user ID is provided
+        if (!data.userId) {
+          console.error('Missing userId in ride creation request');
+          return res.status(400).json({ 
+            error: 'userId is required', 
+            details: 'A valid user ID must be provided'
+          });
+        }
+        
+        console.log(`Looking up user with ID: ${data.userId}`);
+        // Validate that the user exists
+        try {
+          const userExists = await prisma.user.findUnique({
+            where: { id: data.userId }
+          });
+          
+          // If user doesn't exist, return error
+          if (!userExists) {
+            console.error(`User with ID ${data.userId} not found`);
+            return res.status(400).json({ 
+              error: 'Invalid userId', 
+              details: `No user found with ID: ${data.userId}`
+            });
+          }
+          
+          console.log(`User found: ${userExists.email}`);
+        } catch (userLookupError) {
+          console.error('Error looking up user:', userLookupError);
+          return res.status(500).json({ 
+            error: 'User lookup failed', 
+            details: userLookupError.message 
+          });
+        }
+
+        // Prepare the data object with proper field mapping
+        const rideData = {
+          userId: data.userId || data.carrierId,
+          origin: data.origin || data.startLocation || data.fromCity || '',
+          destination: data.destination || data.endLocation || data.toCity || '',
+          departureTime: (data.departureDate && data.departureTime) ? 
+                         new Date(`${data.departureDate}T${data.departureTime}`) : 
+                         data.departureTime ? new Date(data.departureTime) : new Date(),
+          arrivalTime: data.estimatedArrivalTime ? new Date(data.estimatedArrivalTime) : null,
+          vehicleType: data.vehicleType || null,
+          availableSpace: data.availableSpace || (data.availableSpaces ? data.availableSpaces.toString() : 'MEDIUM'),
+          maxWeight: data.maxWeight || data.maxPackageWeight || null,
+          pricePerKg: data.pricePerKg || data.pricePerKm || null,
+          description: data.description || data.notes || null,
+          status: data.status || 'PENDING',
+        };
+        
+        console.log('Creating ride with prepared data:', JSON.stringify(rideData, null, 2));
+
+        // Create the ride
+        try {
+          const newRide = await prisma.ride.create({
+            data: rideData,
+          });
+
+          console.log('Ride created successfully:', JSON.stringify(newRide, null, 2));
+          
+          // 🚀 NOUVEAU: Matching automatique avec les colis compatibles
+          await findAndCreateMatches(newRide);
+          
+          return res.status(201).json(newRide);
+        } catch (createError) {
+          console.error('Ride creation database error:', createError);
+          return res.status(500).json({ 
+            error: 'Failed to create ride in database', 
+            details: createError.message
+          });
+        }
+      } catch (processError) {
+        console.error('Error processing ride data:', processError);
+        return res.status(500).json({ 
+          error: 'Failed to process ride data', 
+          details: processError.message
+        });
+      }
+    } else {
+      return res.status(405).json({ error: 'Method not allowed' });
+    }
+  } catch (error) {
+    console.error('API error:', error);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+}
+
+// 🚀 NOUVELLE FONCTION: Matching automatique des colis
+async function findAndCreateMatches(ride) {
+  try {
+    console.log('🔍 Searching for compatible packages for ride:', {
+      rideId: ride.id,
+      origin: ride.origin,
+      destination: ride.destination,
+      carrierId: ride.userId
+    });
+
+    // Helper function to check if locations are compatible
+    const isLocationCompatible = (address1, address2) => {
+      if (!address1 || !address2) return false;
+      
+      // Convert to lowercase for comparison
+      const addr1 = address1.toLowerCase();
+      const addr2 = address2.toLowerCase();
+      
+      // Extract city names (simple approach - could be improved with geocoding)
+      const extractCity = (address) => {
+        // Look for common city patterns
+        const cityPatterns = [
+          /(\w+)\s*,?\s*\d{5}/, // City before postal code
+          /(\w+)\s*$/, // Last word if no postal code
+          /(\w+)\s*,?\s*france/i, // City before France
+        ];
+        
+        for (const pattern of cityPatterns) {
+          const match = address.match(pattern);
+          if (match) {
+            return match[1].toLowerCase();
+          }
+        }
+        return address.toLowerCase();
+      };
+      
+      const city1 = extractCity(addr1);
+      const city2 = extractCity(addr2);
+      
+      // Check if cities match or are contained in each other
+      return city1.includes(city2) || city2.includes(city1) || city1 === city2;
+    };
+
+    // Find compatible packages
+    const compatiblePackages = await prisma.package.findMany({
+      where: {
+        status: 'PENDING', // Only pending packages
+        userId: {
+          not: ride.userId // Don't match with carrier's own packages
+        },
+        // Don't match packages that already have accepted matches
+        matches: {
+          none: {
+            status: {
+              in: ['ACCEPTED_BY_SENDER', 'CONFIRMED', 'IN_PROGRESS', 'COMPLETED']
+            }
+          }
+        }
+      },
+      include: {
+        user: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            email: true
+          }
+        },
+        matches: {
+          select: {
+            id: true,
+            status: true
+          }
+        }
+      }
+    });
+
+    console.log(`📦 Found ${compatiblePackages.length} potential packages to check`);
+
+    // Get carrier info for notifications
+    const carrier = await prisma.user.findUnique({
+      where: { id: ride.userId },
+      select: {
+        id: true,
+        firstName: true,
+        lastName: true,
+        email: true
+      }
+    });
+
+    let matchesCreated = 0;
+
+    // Check each package for compatibility
+    for (const pkg of compatiblePackages) {
+      const pickupCompatible = isLocationCompatible(pkg.senderAddress, ride.origin);
+      const deliveryCompatible = isLocationCompatible(pkg.recipientAddress, ride.destination);
+
+      console.log(`📍 Package ${pkg.id} compatibility check:`, {
+        packagePickup: pkg.senderAddress,
+        rideOrigin: ride.origin,
+        pickupCompatible,
+        packageDelivery: pkg.recipientAddress,
+        rideDestination: ride.destination,
+        deliveryCompatible
+      });
+
+      // Create match if both pickup and delivery are compatible
+      if (pickupCompatible && deliveryCompatible) {
+        try {
+          // Calculate estimated price based on package weight and ride pricing
+          let estimatedPrice = pkg.price;
+          if (!estimatedPrice && pkg.weight && ride.pricePerKg) {
+            estimatedPrice = pkg.weight * ride.pricePerKg;
+          }
+          if (!estimatedPrice) {
+            estimatedPrice = 25.0; // Default price
+          }
+
+          // Create the match
+          const match = await prisma.match.create({
+            data: {
+              packageId: pkg.id,
+              rideId: ride.id,
+              status: 'PROPOSED', // New status for automatic matches
+              price: estimatedPrice,
+              notes: `Correspondance automatique trouvée: ${ride.origin} → ${ride.destination}`
+            }
+          });
+
+          console.log(`✅ Match created: ${match.id} for package ${pkg.id}`);
+
+          // Create notification for the package owner (customer)
+          await prisma.notification.create({
+            data: {
+              userId: pkg.userId,
+              type: 'MATCH_UPDATE',
+              title: 'Nouvelle proposition de transport !',
+              message: `${carrier.firstName} ${carrier.lastName} peut transporter votre colis "${pkg.description}" pour ${estimatedPrice.toFixed(2)}€. Payez maintenant pour bénéficier de la priorité transporteur !`,
+              relatedEntityId: match.id,
+              isRead: false,
+              data: JSON.stringify({
+                matchId: match.id,
+                packageId: pkg.id,
+                carrierId: carrier.id,
+                carrierName: `${carrier.firstName} ${carrier.lastName}`,
+                price: estimatedPrice,
+                canPayNow: true,
+                priority: true
+              })
+            }
+          });
+
+          matchesCreated++;
+        } catch (matchError) {
+          console.error(`❌ Error creating match for package ${pkg.id}:`, matchError);
+        }
+      }
+    }
+
+    console.log(`🎉 Automatic matching completed: ${matchesCreated} matches created for ride ${ride.id}`);
+
+    // Create notification for the carrier about matches found
+    if (matchesCreated > 0) {
+      await prisma.notification.create({
+        data: {
+          userId: ride.userId,
+          type: 'RIDE_UPDATE',
+          title: 'Correspondances trouvées !',
+          message: `${matchesCreated} colis compatible${matchesCreated > 1 ? 's' : ''} trouvé${matchesCreated > 1 ? 's' : ''} pour votre trajet ${ride.origin} → ${ride.destination}. Les clients ont été notifiés.`,
+          relatedEntityId: ride.id,
+          isRead: false
+        }
+      });
+    }
+
+  } catch (error) {
+    console.error('❌ Error in automatic matching:', error);
+    // Don't throw error to avoid breaking ride creation
+  }
+} 
