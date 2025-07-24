@@ -154,6 +154,7 @@ export default function CarrierDashboard({ isDarkMode, toggleDarkMode }) {
       if (response.ok) {
         const data = await response.json();
         console.log('📊 Carrier dashboard data received:', data);
+        console.log('📦 Deliveries status breakdown:', data.deliveries?.map(d => ({ id: d.id, status: d.status, title: d.title })) || []);
         
         setDashboardStats(data.stats || {});
         setRides(data.rides || []);
@@ -367,10 +368,11 @@ export default function CarrierDashboard({ isDarkMode, toggleDarkMode }) {
         setShowSuccessMessage(true);
         setTimeout(() => setShowSuccessMessage(false), 3000);
         
-        // Refresh data after a short delay to ensure backend is updated
+        // Refresh data immediately and then after a delay for robustness
+        await refreshData();
         setTimeout(async () => {
           await refreshData();
-        }, 500);
+        }, 1000);
         
         // Notifier les clients en temps réel (optionnel)
         if (window.localStorage) {
@@ -403,19 +405,40 @@ export default function CarrierDashboard({ isDarkMode, toggleDarkMode }) {
         
         alert(`Erreur: ${errorMessage}`);
         
-        // Re-enable buttons on error  
+        // Re-enable buttons on error and restore original text
+        const updateButtons = document.querySelectorAll(`[data-package-id="${packageId}"]`);
         updateButtons.forEach(btn => {
           btn.disabled = false;
+          // Restore original button text based on current status
+          if (btn.innerHTML.includes('Mise à jour...')) {
+            if (status === 'ACCEPTED_BY_CARRIER') {
+              btn.innerHTML = btn.innerHTML.replace('Mise à jour...', 'Prendre en charge');
+            } else if (status === 'IN_TRANSIT') {
+              btn.innerHTML = btn.innerHTML.replace('Mise à jour...', 'Démarrer transport');
+            } else if (status === 'DELIVERED') {
+              btn.innerHTML = btn.innerHTML.replace('Mise à jour...', 'Marquer comme livré');
+            }
+          }
         });
       }
     } catch (error) {
       console.error('Error updating delivery status:', error);
       alert(`Erreur réseau: ${error.message}. Vérifiez votre connexion internet et réessayez.`);
       
-      // Re-enable buttons on error
+      // Re-enable buttons on error and restore original text
       const updateButtons = document.querySelectorAll(`[data-package-id="${packageId}"]`);
       updateButtons.forEach(btn => {
         btn.disabled = false;
+        // Restore original button text based on current status
+        if (btn.innerHTML.includes('Mise à jour...')) {
+          if (status === 'ACCEPTED_BY_CARRIER') {
+            btn.innerHTML = btn.innerHTML.replace('Mise à jour...', 'Prendre en charge');
+          } else if (status === 'IN_TRANSIT') {
+            btn.innerHTML = btn.innerHTML.replace('Mise à jour...', 'Démarrer transport');
+          } else if (status === 'DELIVERED') {
+            btn.innerHTML = btn.innerHTML.replace('Mise à jour...', 'Marquer comme livré');
+          }
+        }
       });
     }
   };
@@ -644,13 +667,13 @@ export default function CarrierDashboard({ isDarkMode, toggleDarkMode }) {
   const stats = {
     totalRides: rides.length,
     activeRides: rides.filter(r => ['PENDING', 'CONFIRMED', 'IN_PROGRESS'].includes(r.status)).length,
-    totalDeliveries: deliveries.length,
-    activeDeliveries: deliveries.filter(d => isActiveStatus(d.status)).length,
-    completedDeliveries: deliveries.filter(d => isCompletedStatus(d.status) && d.status === 'DELIVERED').length,
+    totalDeliveries: dashboardStats.totalDeliveries || deliveries.length,
+    activeDeliveries: dashboardStats.activeDeliveries || deliveries.filter(d => isActiveStatus(d.status)).length,
+    completedDeliveries: dashboardStats.deliveriesCompleted || deliveries.filter(d => isCompletedStatus(d.status) && d.status === 'DELIVERED').length,
     totalEarnings: earnings.total || 0,
     activeRelays: deliveries.filter(d => ['AWAITING_RELAY', 'RELAY_IN_PROGRESS'].includes(d.status)).length,
     pendingRideRequests: rideRequests.filter(r => r.status === 'PENDING').length,
-    averageRating: reviews.length > 0 ? (reviews.reduce((sum, r) => sum + r.rating, 0) / reviews.length).toFixed(1) : 0
+    averageRating: dashboardStats.averageRating || (reviews.length > 0 ? (reviews.reduce((sum, r) => sum + r.rating, 0) / reviews.length).toFixed(1) : 0)
   };
 
   return (

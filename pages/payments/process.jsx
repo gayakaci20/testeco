@@ -8,7 +8,8 @@ import { Elements, useStripe, useElements, PaymentElement } from '@stripe/react-
 // Load Stripe
 const stripePromise = loadStripe(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY);
 
-const PaymentForm = ({ 
+// Component for Stripe Elements payment (box rentals)
+const StripePaymentForm = ({ 
   paymentData, 
   onPaymentSuccess, 
   onPaymentError, 
@@ -98,17 +99,202 @@ const PaymentForm = ({
       <button
         type="submit"
         disabled={!stripe || isProcessing}
-        className="flex justify-center items-center px-4 py-3 space-x-2 w-full text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+        className={`w-full flex justify-center items-center px-4 py-3 font-medium text-white rounded-md ${
+          !stripe || isProcessing
+            ? 'bg-gray-400 cursor-not-allowed'
+            : 'bg-blue-600 hover:bg-blue-700 active:bg-blue-800'
+        } transition-colors`}
       >
         {isProcessing ? (
           <>
-            <div className="w-4 h-4 rounded-full border-b-2 border-white animate-spin"></div>
-            <span>Traitement en cours...</span>
+            <div className="mr-2 w-5 h-5 rounded-full border-2 border-white animate-spin border-t-transparent"></div>
+            Traitement en cours...
           </>
         ) : (
           <>
-            <Lock className="w-4 h-4" />
-            <span>Payer {paymentData.amount}€</span>
+            <Lock className="mr-2 w-5 h-5" />
+            Payer {paymentData.amount}€
+          </>
+        )}
+      </button>
+    </form>
+  );
+};
+
+// Component for direct card payment (ride requests)
+const DirectCardPaymentForm = ({ 
+  paymentData, 
+  onPaymentSuccess, 
+  onPaymentError,
+  isProcessing,
+  setIsProcessing 
+}) => {
+  const [formData, setFormData] = useState({
+    cardNumber: '',
+    expiryDate: '',
+    cvv: '',
+    cardholderName: ''
+  });
+  const [error, setError] = useState(null);
+
+  const handleSubmit = async (event) => {
+    event.preventDefault();
+    setIsProcessing(true);
+    setError(null);
+
+    try {
+      console.log('🚗 Processing ride request payment:', paymentData.id);
+      
+      const response = await fetch('/api/ride-payments', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          rideRequestId: paymentData.id,
+          paymentData: {
+            paymentMethod: 'CARD',
+            cardNumber: formData.cardNumber,
+            expiryDate: formData.expiryDate,
+            cvv: formData.cvv,
+            cardholderName: formData.cardholderName
+          }
+        })
+      });
+
+      const result = await response.json();
+
+      if (response.ok && result.success) {
+        console.log('✅ Ride payment successful:', result);
+        onPaymentSuccess(result);
+      } else {
+        throw new Error(result.error || 'Payment failed');
+      }
+    } catch (err) {
+      console.error('Payment error:', err);
+      setError(err.message || 'Une erreur est survenue lors du paiement');
+      onPaymentError(err);
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const handleInputChange = (e) => {
+    const { name, value } = e.target;
+    
+    if (name === 'cardNumber') {
+      // Format card number
+      const formattedValue = value.replace(/\s/g, '').replace(/(\d{4})/g, '$1 ').trim();
+      if (formattedValue.replace(/\s/g, '').length <= 16) {
+        setFormData(prev => ({ ...prev, [name]: formattedValue }));
+      }
+    } else if (name === 'expiryDate') {
+      // Format expiry date
+      const formattedValue = value.replace(/\D/g, '').replace(/(\d{2})(\d{2})/, '$1/$2');
+      if (formattedValue.length <= 5) {
+        setFormData(prev => ({ ...prev, [name]: formattedValue }));
+      }
+    } else if (name === 'cvv') {
+      // Format CVV
+      if (value.replace(/\D/g, '').length <= 3) {
+        setFormData(prev => ({ ...prev, [name]: value.replace(/\D/g, '') }));
+      }
+    } else {
+      setFormData(prev => ({ ...prev, [name]: value }));
+    }
+  };
+
+  return (
+    <form onSubmit={handleSubmit} className="space-y-6">
+      {error && (
+        <div className="flex items-center p-4 space-x-3 bg-red-50 rounded-md border border-red-200">
+          <AlertCircle className="flex-shrink-0 w-5 h-5 text-red-600" />
+          <p className="text-sm text-red-700">{error}</p>
+        </div>
+      )}
+      
+      <div className="space-y-4">
+        <div>
+          <label className="block mb-2 text-sm font-medium text-gray-700">
+            Nom sur la carte
+          </label>
+          <input
+            type="text"
+            name="cardholderName"
+            value={formData.cardholderName}
+            onChange={handleInputChange}
+            placeholder="John Doe"
+            className="px-3 py-2 w-full rounded-md border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            required
+          />
+        </div>
+        
+        <div>
+          <label className="block mb-2 text-sm font-medium text-gray-700">
+            Numéro de carte
+          </label>
+          <input
+            type="text"
+            name="cardNumber"
+            value={formData.cardNumber}
+            onChange={handleInputChange}
+            placeholder="1234 5678 9012 3456"
+            className="px-3 py-2 w-full rounded-md border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            required
+          />
+        </div>
+        
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <label className="block mb-2 text-sm font-medium text-gray-700">
+              Date d'expiration
+            </label>
+            <input
+              type="text"
+              name="expiryDate"
+              value={formData.expiryDate}
+              onChange={handleInputChange}
+              placeholder="MM/AA"
+              className="px-3 py-2 w-full rounded-md border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              required
+            />
+          </div>
+          
+          <div>
+            <label className="block mb-2 text-sm font-medium text-gray-700">
+              CVV
+            </label>
+            <input
+              type="text"
+              name="cvv"
+              value={formData.cvv}
+              onChange={handleInputChange}
+              placeholder="123"
+              className="px-3 py-2 w-full rounded-md border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              required
+            />
+          </div>
+        </div>
+      </div>
+      
+      <button
+        type="submit"
+        disabled={isProcessing}
+        className={`w-full flex justify-center items-center px-4 py-3 font-medium text-white rounded-md ${
+          isProcessing
+            ? 'bg-gray-400 cursor-not-allowed'
+            : 'bg-blue-600 hover:bg-blue-700 active:bg-blue-800'
+        } transition-colors`}
+      >
+        {isProcessing ? (
+          <>
+            <div className="mr-2 w-5 h-5 rounded-full border-2 border-white animate-spin border-t-transparent"></div>
+            Traitement en cours...
+          </>
+        ) : (
+          <>
+            <Lock className="mr-2 w-5 h-5" />
+            Payer {paymentData.amount}€
           </>
         )}
       </button>
@@ -445,14 +631,10 @@ export default function PaymentProcess() {
             throw new Error(result.error || 'Failed to initialize payment');
           }
         } else if (detectedType === 'ride_request' && rideRequestId) {
-          // For ride requests, we need to get data differently since we don't have a single endpoint
-          // We'll set minimal data needed for payment processing
-          setPaymentData({
-            id: rideRequestId,
-            type: 'ride_request',
-            amount: 0, // Will be fetched by the payment API
-            description: 'Paiement de trajet'
-          });
+          // For ride requests, we use a different approach - no client secret needed
+          console.log('🚗 Processing ride request payment for:', rideRequestId);
+          endpoint = `/api/ride-requests/${rideRequestId}`;
+          id = rideRequestId;
         } else if (detectedType === 'match' && matchId) {
           endpoint = `/api/matches/${matchId}`;
           id = matchId;
@@ -493,6 +675,9 @@ export default function PaymentProcess() {
             } else if (detectedType === 'direct_package') {
               amount = data.price || 0;
               description = `Paiement direct - ${data.description || data.title || 'Colis'}`;
+            } else if (detectedType === 'ride_request') {
+              amount = data.price || 0;
+              description = `Paiement de trajet - ${data.ride?.origin || ''} → ${data.ride?.destination || ''}`;
             }
             
             setPaymentData({
@@ -641,10 +826,11 @@ export default function PaymentProcess() {
             </div>
           </div>
 
-          {/* Use secure Stripe Elements for box rentals */}
+          {/* Use appropriate payment form based on payment type */}
           {paymentData?.type === 'storage_rental' && clientSecret ? (
+            // Stripe Elements for box rentals
             <Elements stripe={stripePromise} options={{ ...stripeOptions, clientSecret }}>
-              <PaymentForm
+              <StripePaymentForm
                 paymentData={paymentData}
                 onPaymentSuccess={handlePaymentSuccess}
                 onPaymentError={handlePaymentError}
@@ -653,8 +839,17 @@ export default function PaymentProcess() {
                 setIsProcessing={setIsProcessing}
               />
             </Elements>
+          ) : paymentData?.type === 'ride_request' ? (
+            // Direct card form for ride requests
+            <DirectCardPaymentForm
+              paymentData={paymentData}
+              onPaymentSuccess={handlePaymentSuccess}
+              onPaymentError={handlePaymentError}
+              isProcessing={isProcessing}
+              setIsProcessing={setIsProcessing}
+            />
           ) : (
-            /* Use legacy form for other payment types (to be updated later) */
+            /* Use legacy form for other payment types (matches, packages, etc.) */
             <LegacyPaymentForm
               paymentData={paymentData}
               onPaymentSuccess={handlePaymentSuccess}

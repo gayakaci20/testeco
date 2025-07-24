@@ -85,7 +85,7 @@ export default async function handler(req, res) {
     // Get confirmed deliveries
     const myDeliveries = await prisma.match.findMany({
       where: {
-        status: { in: ['CONFIRMED', 'ACCEPTED_BY_CARRIER', 'ACCEPTED_BY_SENDER', 'IN_PROGRESS'] },
+        status: { in: ['CONFIRMED', 'ACCEPTED_BY_CARRIER', 'ACCEPTED_BY_SENDER', 'IN_PROGRESS', 'COMPLETED'] },
         ride: {
           userId: userId
         }
@@ -149,10 +149,12 @@ export default async function handler(req, res) {
       .filter(payment => new Date(payment.createdAt) >= monthStart)
       .reduce((sum, payment) => sum + payment.amount, 0);
 
-    // Calculate stats
-    const totalDeliveries = myDeliveries.filter(d => d.status === 'CONFIRMED').length;
-    const pendingDeliveries = myDeliveries.filter(d => d.status === 'ACCEPTED_BY_CARRIER').length;
-    const inTransitDeliveries = myDeliveries.filter(d => d.status === 'ACCEPTED_BY_SENDER').length;
+    // Calculate stats - use match status for consistency
+    const totalDeliveries = myDeliveries.length;
+    const activeDeliveries = myDeliveries.filter(d => ['CONFIRMED', 'ACCEPTED_BY_CARRIER', 'ACCEPTED_BY_SENDER', 'IN_PROGRESS'].includes(d.status)).length;
+    const deliveriesCompleted = myDeliveries.filter(d => d.status === 'COMPLETED').length;
+    const pendingDeliveries = myDeliveries.filter(d => d.status === 'CONFIRMED').length;
+    const inTransitDeliveries = myDeliveries.filter(d => ['ACCEPTED_BY_CARRIER', 'IN_PROGRESS'].includes(d.status)).length;
     
     // Mock rating for now (could be calculated from reviews)
     const averageRating = 4.8;
@@ -193,9 +195,23 @@ export default async function handler(req, res) {
       myDeliveries: myDeliveries.map(delivery => {
         const isMerchantDelivery = delivery.package.description.includes('[MERCHANT_DELIVERY]');
         const cleanTitle = delivery.package.description.replace('[MERCHANT_DELIVERY] ', '');
+        
+        // Map match status to appropriate display status for consistency
+        let displayStatus = delivery.package.status;
+        if (delivery.status === 'COMPLETED' && delivery.package.status === 'DELIVERED') {
+          displayStatus = 'DELIVERED';
+        } else if (delivery.status === 'IN_PROGRESS' && delivery.package.status === 'IN_TRANSIT') {
+          displayStatus = 'IN_TRANSIT';
+        } else if (delivery.status === 'ACCEPTED_BY_CARRIER' && delivery.package.status === 'ACCEPTED_BY_CARRIER') {
+          displayStatus = 'ACCEPTED_BY_CARRIER';
+        } else {
+          // Use package status as fallback
+          displayStatus = delivery.package.status;
+        }
+        
         return {
           id: delivery.id,
-          status: delivery.package.status, // Use package status instead of match status
+          status: displayStatus, // Use consistent mapped status
           title: cleanTitle,
           description: cleanTitle,
           weight: delivery.package.weight,
@@ -231,9 +247,23 @@ export default async function handler(req, res) {
       deliveries: myDeliveries.map(delivery => {
         const isMerchantDelivery = delivery.package.description.includes('[MERCHANT_DELIVERY]');
         const cleanTitle = delivery.package.description.replace('[MERCHANT_DELIVERY] ', '');
+        
+        // Map match status to appropriate display status for consistency
+        let displayStatus = delivery.package.status;
+        if (delivery.status === 'COMPLETED' && delivery.package.status === 'DELIVERED') {
+          displayStatus = 'DELIVERED';
+        } else if (delivery.status === 'IN_PROGRESS' && delivery.package.status === 'IN_TRANSIT') {
+          displayStatus = 'IN_TRANSIT';
+        } else if (delivery.status === 'ACCEPTED_BY_CARRIER' && delivery.package.status === 'ACCEPTED_BY_CARRIER') {
+          displayStatus = 'ACCEPTED_BY_CARRIER';
+        } else {
+          // Use package status as fallback
+          displayStatus = delivery.package.status;
+        }
+        
         return {
           id: delivery.id,
-          status: delivery.package.status, // Use package status instead of match status
+          status: displayStatus, // Use consistent mapped status
           title: cleanTitle,
           description: cleanTitle,
           weight: delivery.package.weight,
@@ -292,6 +322,8 @@ export default async function handler(req, res) {
       },
       stats: {
         totalDeliveries,
+        activeDeliveries,
+        deliveriesCompleted,
         pendingDeliveries,
         inTransitDeliveries,
         successRate: Math.round(successRate * 10) / 10,
