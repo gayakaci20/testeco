@@ -16,8 +16,8 @@ const nextConfig = {
   
   // Configure experimental features to handle host validation
   experimental: {
-    // Allow insecure host connections for development
-    allowedHosts: [
+    // Disable host validation in production for Docker deployment
+    allowedHosts: process.env.NODE_ENV === 'production' ? undefined : [
       'localhost',
       '127.0.0.1',
       'ecodeli.pro',
